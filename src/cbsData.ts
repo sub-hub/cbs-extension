@@ -145,7 +145,7 @@ export const cbsCommandsData: CbsCommandInfo[] = [
   { name: 'element', aliases: ['ele'], description: 'Access nested element in JSON object/array A using path B, C...', signatureLabel: 'element::A::B::[C...]', parameters: [{ label: 'A (JSON object/array)' }, { label: 'B (key/index)' }, { label: 'C... (nested keys/indices)' }] },
   // Utility Syntaxes
   { name: 'slot', description: 'Used within #each blocks. Replaced with the current element being iterated over, identified by name A.', signatureLabel: 'slot::A', parameters: [{ label: 'A (item variable name from #each)' }] }, // Clarified usage
-  // { name: 'position', description: 'Replaced with lorebook content at position pt_A.', signatureLabel: 'position::A', parameters: [{ label: 'A (position name)' }] }, // Removed, not implemented
+  { name: 'position', description: 'Replaced with lorebook content at position pt_A.', signatureLabel: 'position::A', parameters: [{ label: 'A (position name)' }] },
   { name: 'random', description: 'Replaced with a random value from parameters. Can use :: or : with , as separator (e.g., random::A::B or random:A,B).', signatureLabel: 'random:A,[B...]', parameters: [{ label: 'A, B... (values)' }], isPrefixCommand: true }, // Clarified separators
   { name: 'pick', description: 'Consistent random value from parameters for the same message. Can use :: or : with , as separator.', signatureLabel: 'pick:A,[B...]', parameters: [{ label: 'A, B... (values)' }], isPrefixCommand: true }, // Clarified separators
   { name: 'roll', description: 'Random number between 1 and A (e.g., roll:6 or roll:d20).', signatureLabel: 'roll:A', parameters: [{ label: 'A (max value or dX)' }], isPrefixCommand: true },
