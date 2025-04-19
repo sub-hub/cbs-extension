@@ -1,0 +1,21 @@
+{
+  "comments": {
+    "blockComment": [ "{{hidden_key:", "}}" ]
+  },
+  "brackets": [
+    ["{{", "}}"]
+  ],
+  "autoClosingPairs": [
+    { "open": "{{", "close": "}}" }
+  ],
+  "surroundingPairs": [
+    { "open": "{{", "close": "}}" },
+    { "open": "{", "close": "}" }
+  ],
+  "folding": {
+    "markers": {
+      "start": "^\\s*\\{\\{#", // Matches lines starting with {{# (allowing leading whitespace)
+      "end": "^\\s*\\{\\{\\/" // Matches lines starting with {{/ (allowing leading whitespace)
+    }
+  }
+}

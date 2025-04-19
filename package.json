@@ -1,0 +1,74 @@
+{
+  "name": "cbs-editor",
+  "displayName": "RisuAI CBS Editor",
+  "description": "Provides syntax highlighting and language support for Curly Braced Syntax (CBS) In RisuAI",
+  "version": "1.0.1",
+  "publisher": "mollu",
+  "license": "GPL-3.0-only",
+  "homepage": "https://github.com/sub-hub/cbs-extension",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sub-hub/cbs-extension.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sub-hub/cbs-extension/issues"
+  },
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "activationEvents": [
+    "onLanguage:cbs"
+  ],
+  "capabilities": {
+    "documentFormattingProvider": true,
+    "documentRangeFormattingProvider": true
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Linters",
+    "Formatters"
+  ],
+  "keywords": [
+    "cbs",
+    "curly braced syntax",
+    "syntax highlighting",
+    "formatter",
+    "linter",
+    "intellisense",
+    "prettier"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [{
+      "id": "cbs",
+      "aliases": ["Curly Braced Syntax", "cbs"],
+      "extensions": [".cbs"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "cbs",
+      "scopeName": "source.cbs",
+      "path": "./syntaxes/cbs.tmLanguage.json"
+    }],
+    "snippets": [{
+      "language": "cbs",
+      "path": "./snippets/cbs.json"
+    }]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "18.x",
+    "@typescript-eslint/eslint-plugin": "^7.11.0",
+    "@typescript-eslint/parser": "^7.11.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Curly Braced Syntax (CBS)",
+  "scopeName": "source.cbs",
+  "patterns": [
+    {
+      "include": "#cbs_block"
+    }
+  ],
+  "repository": {
+    "cbs_block": {
+      "name": "meta.tag.cbs",
+      "begin": "\\{\\{",
+      "end": "\\}\\}",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.tag.begin.cbs" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.tag.end.cbs" }
+      },
+      "patterns": [
+        { "include": "#block_start_tag_prefix" },
+        { "include": "#block_end_tag" },
+        { "include": "#expression_tag_prefix" },
+        { "include": "#regular_tag_prefix" },
+        { "include": "#parameters_content" }
+      ]
+    },
+    "block_start_tag_prefix": {
+      "match": "(?i)(#)([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.keyword.cbs" },
+        "2": { "name": "keyword.control.block.start.cbs" }
+      }
+    },
+    "block_end_tag": {
+      "name": "meta.tag.block.end.cbs",
+      "match": "(?i)(/)([a-zA-Z_][a-zA-Z0-9_]*)?",
+      "captures": {
+        "1": { "name": "punctuation.definition.keyword.cbs" },
+        "2": { "name": "keyword.control.block.end.cbs" }
+      }
+    },
+    "expression_tag_prefix": {
+      "match": "(\\?)",
+      "captures": {
+        "1": { "name": "keyword.operator.expression.cbs" }
+      }
+    },
+    "regular_tag_prefix": {
+      "match": "(?i)(?<=\\{\\{\\s*)([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*(::|\\}\\}))",
+      "captures": {
+        "1": { "name": "entity.name.function.cbs" }
+      }
+    },
+    "parameters_content": {
+      "patterns": [
+        {
+          "include": "#cbs_block"
+        },
+        {
+          "name": "punctuation.separator.parameters.cbs",
+          "match": "::"
+        },
+        {
+          "name": "variable.parameter.cbs",
+          "match": "([^:{\\}]|:(?!:)|\\}(?!\\}))+"
+        },
+        {
+          "include": "#expression_content"
+        }
+      ]
+    },
+    "expression_content": {
+       "patterns": [
+         { "include": "#cbs_block" },
+         { "name": "keyword.operator.arithmetic.cbs", "match": "[+\\-*/%^]" },
+         { "name": "keyword.operator.logical.cbs", "match": "\\|\\||&&|!|&|\\|" },
+         { "name": "keyword.operator.comparison.cbs", "match": "==|!=|>=|<=|>|<|=|≤|≥" },
+         { "name": "variable.other.expression.cbs", "match": "\\$[a-zA-Z_][a-zA-Z0-9_]*" },
+         { "name": "constant.numeric.cbs", "match": "\\b\\d+(\\.\\d+)?\\b" }
+       ]
+    }
+  }
+}

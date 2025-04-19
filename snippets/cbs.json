@@ -1,0 +1,47 @@
+{
+  "CBS: if block": {
+    "prefix": ["cbsif", "{{#if", "if", "[if"],
+    "body": [
+      "{{#if ${1:condition}}}",
+      "\t$0",
+      "{{/if}}"
+    ],
+    "description": "Inserts an if block."
+  },
+  "CBS: if-pure block": {
+    "prefix": ["cbsifp", "{{#if-pure", "if-pure", "[if-pure"],
+    "body": [
+      "{{#if-pure ${1:condition}}}",
+      "$0",
+      "{{/if-pure}}"
+    ],
+    "description": "Inserts an if-pure block (preserves whitespace)."
+  },
+  "CBS: each block": {
+    "prefix": ["cbseach", "{{#each", "each", "[each"],
+    "body": [
+      "{{#each ${1:array} ${2:item}}}",
+      "\t{{slot::$2}}$0",
+      "{{/each}}"
+    ],
+    "description": "Inserts an each block."
+  },
+  "CBS: func block": {
+    "prefix": ["cbsfuncb", "{{#func", "func", "[func"],
+    "body": [
+      "{{#func ${1:functionName}}}",
+      "\t$0",
+      "{{/func}}"
+    ],
+    "description": "Inserts a func block definition."
+  },
+  "CBS: pure_display block": {
+    "prefix": ["cbspured", "{{#pure_display", "pure_display", "[pure_display"],
+    "body": [
+      "{{#pure_display}}",
+      "$0",
+      "{{/pure_display}}"
+    ],
+    "description": "Inserts a pure_display block."
+  }
+}
