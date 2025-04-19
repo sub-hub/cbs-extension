@@ -456,7 +456,7 @@ export function activate(context: vscode.ExtensionContext) {
              vscode.commands.executeCommand('setContext', 'cbs.isPreviewActive', false);
         }
     }
-  }));
+  });
 
   // --- Existing Providers ---
   const hoverProvider = vscode.languages.registerHoverProvider('cbs', {
