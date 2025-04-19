@@ -369,7 +369,7 @@ export function goToOriginalLine(
                     // Remove the highlight after a short delay
                     setTimeout(() => {
                         targetEditor.setDecorations(decorationType, []);
-                    }, 1500); // Highlight duration: 1.5 seconds
+                    }, 3000); // Highlight duration
                 }
             });
         }, (err: any) => { // Add error handling for opening document
@@ -444,7 +444,7 @@ export function goToOriginalCharacter(
                     // Remove the highlight after a short delay
                     setTimeout(() => {
                         targetEditor.setDecorations(decorationType, []);
-                    }, 1500); // Highlight duration: 1.5 seconds
+                    }, 3000); // Highlight duration
                 }
             });
 
