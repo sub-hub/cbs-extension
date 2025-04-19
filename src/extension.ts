@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import * as path from 'path'; // Import path module
-import { cbsCommandsData, findCommandInfo, extractCommandIdentifierFromPrefix, countParametersInCurrentTag } from './cbsData'; // Removed unused CbsCommandInfo, CbsParameterInfo
+import * as path from 'path';
+import { cbsCommandsData, findCommandInfo, extractCommandIdentifierFromPrefix, countParametersInCurrentTag } from './cbsData';
 import { CbsLinter } from './cbsLinter';
 import { formatLine, calculateInitialFormattingState, FormattingState, formatDocumentWithMapping, SourceMapEntry, goToOriginalLine, goToOriginalCharacter } from './cbsFormatter';
 
@@ -28,8 +28,13 @@ interface PreviewContext {
     formattedContent: string; // Store the content here
 }
 
-// NEW: Map to store context for active previews
+// Map to store context for active previews
 const previewContextMap = new Map<string, PreviewContext>(); // Key: Preview URI string
+// Map to track which original URI corresponds to which preview URI(s)
+const originalToPreviewMap = new Map<string, Set<string>>(); // Key: Original URI string, Value: Set of Preview URI strings
+// Debounce timer for preview updates
+let updatePreviewDebounceTimer: NodeJS.Timeout | undefined;
+
 
 function getVariableNameAtPosition(document: vscode.TextDocument, position: vscode.Position, allLocations: VariableLocation[]): string | undefined {
     for (const loc of allLocations) {
@@ -130,20 +135,31 @@ function isInsideCbsTag(document: vscode.TextDocument, position: vscode.Position
 
 let cbsLinter: CbsLinter;
 
-// NEW: Content provider for the virtual preview document
+// Content provider for the virtual preview document
 class CbsPreviewContentProvider implements vscode.TextDocumentContentProvider {
-    // Provide content - VS Code calls this when opening the virtual doc
+    // Emitter and event for signalling content changes
+    private _onDidChangeEmitter = new vscode.EventEmitter<vscode.Uri>();
+    readonly onDidChange = this._onDidChangeEmitter.event;
+
+    // Provide content - VS Code calls this when opening the virtual doc or when notified of change
     provideTextDocumentContent(uri: vscode.Uri): string | Thenable<string> {
         const context = previewContextMap.get(uri.toString());
-        // We actually store the formatted content directly when creating the preview context
-        // This provider is mainly needed to satisfy the API, but the content comes from the map
-        // For simplicity, we'll retrieve it from the map if needed, but ideally, it's set beforehand.
-        // Let's refine this: store content in the map too.
-        return context?.formattedContent ?? ''; // Return stored content or empty string
+        console.log(`Preview Provider: Providing content for ${uri.toString()}. Found context: ${!!context}`);
+        return context?.formattedContent ?? `// Error: Could not find preview content for ${uri.toString()}`;
+    }
+
+    // Method to signal that the content for a specific URI has changed
+    update(uri: vscode.Uri) {
+        console.log(`Preview Provider: Firing change event for ${uri.toString()}`);
+        this._onDidChangeEmitter.fire(uri);
+    }
+
+    dispose() {
+        this._onDidChangeEmitter.dispose();
     }
 }
 
-// Refine PreviewContext to include content
+// PreviewContext interface remains the same
 interface PreviewContext {
     originalUri: vscode.Uri;
     sourceMap: SourceMapEntry[];
@@ -158,8 +174,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --- Register Content Provider ---
   const previewScheme = 'cbs-preview';
-  const previewProvider = new CbsPreviewContentProvider();
+  const previewProvider = new CbsPreviewContentProvider(); // Instantiate the provider
   context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(previewScheme, previewProvider));
+  context.subscriptions.push(previewProvider); // Ensure provider is disposed
 
   // --- Command: Show Formatted Preview ---
   const showPreviewCommand = vscode.commands.registerCommand('cbs.showFormattedPreview', async () => {
@@ -193,11 +210,19 @@ export function activate(context: vscode.ExtensionContext) {
         previewContextMap.set(previewUri.toString(), {
             originalUri: originalDocument.uri,
             sourceMap: sourceMap,
-            formattedContent: formattedText // Store content
+            formattedContent: formattedText
         });
 
+        // Track the mapping from original to preview
+        const originalUriString = originalDocument.uri.toString();
+        if (!originalToPreviewMap.has(originalUriString)) {
+            originalToPreviewMap.set(originalUriString, new Set());
+        }
+        originalToPreviewMap.get(originalUriString)?.add(previewUri.toString());
+        console.log(`Show Preview: Added mapping ${originalUriString} -> ${previewUri.toString()}`);
+
         // Open the virtual document
-        const previewDoc = await vscode.workspace.openTextDocument(previewUri);
+        const previewDoc = await vscode.workspace.openTextDocument(previewUri); // URI is now correctly passed
         await vscode.window.showTextDocument(previewDoc, {
             viewColumn: vscode.ViewColumn.Beside, // Open beside the original
             preview: false, // Keep it open
@@ -326,10 +351,99 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }));
 
-  // Cleanup map when preview documents are closed
-  context.subscriptions.push(vscode.workspace.onDidCloseTextDocument(document => {
+  // --- Listener for Original Document Changes (for Real-time Preview) ---
+  const documentChangeListener = vscode.workspace.onDidChangeTextDocument(event => {
+    const changedDocument = event.document;
+    const config = vscode.workspace.getConfiguration('cbs.preview.realtimeUpdate');
+    const isRealtimeEnabled = config.get<boolean>('enabled', true);
+    const debounceDelay = config.get<number>('debounceDelay', 500);
+
+    // Only proceed if real-time updates are enabled and the changed doc is a CBS file
+    // AND it's an original file (not a preview itself) that has an active preview
+    if (!isRealtimeEnabled || changedDocument.languageId !== 'cbs' || changedDocument.uri.scheme === previewScheme) {
+        return;
+    }
+
+    const originalUriString = changedDocument.uri.toString();
+    const correspondingPreviewUris = originalToPreviewMap.get(originalUriString);
+
+    if (!correspondingPreviewUris || correspondingPreviewUris.size === 0) {
+        // No active preview for this original document
+        return;
+    }
+
+    console.log(`Doc Change: Detected change in ${originalUriString}, which has previews.`);
+
+    // Clear existing timer if there is one
+    if (updatePreviewDebounceTimer) {
+        clearTimeout(updatePreviewDebounceTimer);
+    }
+
+    // Set a new timer
+    updatePreviewDebounceTimer = setTimeout(() => {
+        console.log(`Doc Change Debounced: Updating preview for ${originalUriString}`);
+        try {
+            const editor = vscode.window.visibleTextEditors.find(e => e.document.uri.toString() === originalUriString);
+            const options: vscode.FormattingOptions = {
+                tabSize: editor?.options.tabSize as number || vscode.workspace.getConfiguration('editor', { languageId: 'cbs' }).get('tabSize', 4),
+                insertSpaces: editor?.options.insertSpaces as boolean || vscode.workspace.getConfiguration('editor', { languageId: 'cbs' }).get('insertSpaces', true)
+            };
+
+            // Re-format the *current* state of the original document
+            const { formattedText, sourceMap } = formatDocumentWithMapping(changedDocument, options);
+
+            // Update context and notify provider for each associated preview window
+            correspondingPreviewUris.forEach(previewUriString => {
+                const previewUri = vscode.Uri.parse(previewUriString);
+                const existingContext = previewContextMap.get(previewUriString);
+                if (existingContext) {
+                    // Update the context in the map
+                    previewContextMap.set(previewUriString, {
+                        ...existingContext, // Keep originalUri
+                        sourceMap: sourceMap,
+                        formattedContent: formattedText
+                    });
+                    console.log(`Doc Change Debounced: Updated context for ${previewUriString}`);
+
+                    // Notify the content provider to refresh this specific preview
+                    previewProvider.update(previewUri);
+                } else {
+                     console.warn(`Doc Change Debounced: Could not find context for preview URI ${previewUriString} during update.`);
+                }
+            });
+
+        } catch (error) {
+            console.error("Error updating CBS preview:", error);
+            // Optionally show a subtle error to the user, but avoid being too noisy
+            // vscode.window.showWarningMessage(`Failed to update CBS preview: ${error}`);
+        }
+        updatePreviewDebounceTimer = undefined; // Clear timer reference
+    }, debounceDelay);
+  });
+  context.subscriptions.push(documentChangeListener);
+
+
+  // --- Cleanup map when preview documents are closed ---
+  const closeDocumentListener = vscode.workspace.onDidCloseTextDocument(document => {
     if (document.uri.scheme === previewScheme) {
-        previewContextMap.delete(document.uri.toString());
+        const closedPreviewUriString = document.uri.toString();
+        console.log(`Close Doc: Preview closed: ${closedPreviewUriString}`);
+        previewContextMap.delete(closedPreviewUriString);
+
+        // Remove the closed preview from the originalToPreviewMap
+        originalToPreviewMap.forEach((previewSet, originalUri) => {
+            if (previewSet.has(closedPreviewUriString)) {
+                previewSet.delete(closedPreviewUriString);
+                console.log(`Close Doc: Removed ${closedPreviewUriString} from mapping for ${originalUri}`);
+                // If no more previews exist for this original, remove the entry entirely
+                if (previewSet.size === 0) {
+                    originalToPreviewMap.delete(originalUri);
+                     console.log(`Close Doc: Removed empty mapping entry for ${originalUri}`);
+                }
+            }
+        });
+
+
         // Check if any other preview windows are open before disabling context
         let anyPreviewOpen = false;
         for (const editor of vscode.window.visibleTextEditors) {
@@ -596,7 +710,7 @@ export function activate(context: vscode.ExtensionContext) {
     documentFormattingProvider, // Register new full document formatter
     rangeFormattingProvider,    // Register range formatter
     vscode.languages.registerDefinitionProvider('cbs', new CbsDefinitionProvider(cbsLinter)),
-    vscode.languages.registerReferenceProvider('cbs', new CbsReferenceProvider(cbsLinter))
+    vscode.languages.registerReferenceProvider('cbs', new CbsReferenceProvider(cbsLinter)), // Added comma here
     // Note: ContentProvider registration was pushed earlier
   );
 
@@ -605,9 +719,15 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
+    // Clear debounce timer if extension is deactivated
+    if (updatePreviewDebounceTimer) {
+        clearTimeout(updatePreviewDebounceTimer);
+    }
     if (cbsLinter) {
         cbsLinter.dispose();
     }
-    foundRangeDecorationType.dispose(); // Dispose of the decoration type
-    previewContextMap.clear(); // Clear the map on deactivation
+    foundRangeDecorationType.dispose();
+    previewContextMap.clear();
+    originalToPreviewMap.clear(); // Clear the tracking map
+    console.log("CBS Extension Deactivated: Cleaned up resources.");
 }

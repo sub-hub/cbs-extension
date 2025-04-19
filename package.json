@@ -99,7 +99,22 @@
             "type": "boolean",
             "default": false
         }
-    ]
+    ],
+    "configuration": {
+        "title": "CBS Editor",
+        "properties": {
+            "cbs.preview.realtimeUpdate.enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Enable real-time updates for the CBS Formatted Preview window when the original file changes."
+            },
+            "cbs.preview.realtimeUpdate.debounceDelay": {
+                "type": "number",
+                "default": 0,
+                "description": "Delay in milliseconds before updating the preview after a change (debounce). Higher values reduce lag during typing."
+            }
+        }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
