@@ -585,8 +585,17 @@ export function activate(context: vscode.ExtensionContext) {
                 item.additionalTextEdits = [deleteTriggerEdit]; // Always include the deletion edit
 
                 if (cmdInfo.parameters && cmdInfo.parameters.length > 0) {
-                    // Check if it's a prefix command to use the correct separator
-                    const separator = cmdInfo.isPrefixCommand ? ':' : '::';
+                    // Make sure to use the correct separator for prefix commands
+                    let separator;
+                    if(cmdInfo.name === '?'){
+                        separator = ' ';
+                    }else{
+                        if(cmdInfo.isPrefixCommand){
+                            separator = ':';
+                        }else{
+                            separator = '::';
+                        }
+                    }
                     item.insertText = new vscode.SnippetString(`{{${cmdInfo.name}${separator}$\{1\}}}`);
                 } else {
                     item.insertText = `{{${cmdInfo.name}}}`;

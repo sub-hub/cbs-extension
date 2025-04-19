@@ -217,6 +217,11 @@ export class CbsLinter {
                 continue;
             }
 
+            // Skip command name and parameter count linting for {{? ... }} tags
+            if (tagContent.startsWith('?')) {
+                continue;
+            }
+
             const parts = tagContent.split('::');
             const commandName = parts[0];
             const params = parts.slice(1);
