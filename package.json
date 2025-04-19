@@ -55,7 +55,51 @@
     "snippets": [{
       "language": "cbs",
       "path": "./snippets/cbs.json"
-    }]
+    }],
+    "commands": [
+      {
+        "command": "cbs.showFormattedPreview",
+        "title": "CBS: Show Formatted Preview",
+        "category": "CBS"
+      },
+      {
+        "command": "cbs.goToOriginalLocation",
+        "title": "CBS: Go To Original Location",
+        "category": "CBS"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "cbs.showFormattedPreview",
+          "when": "editorLangId == cbs"
+        },
+        {
+          "command": "cbs.goToOriginalLocation",
+          "when": "cbs.isPreviewActive"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "cbs.showFormattedPreview",
+          "when": "editorLangId == cbs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "cbs.goToOriginalLocation",
+          "when": "cbs.isPreviewActive",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "context": [
+        {
+            "name": "cbs.isPreviewActive",
+            "description": "True when the active editor is a CBS formatted preview window.",
+            "type": "boolean",
+            "default": false
+        }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

@@ -1,13 +1,34 @@
 import * as vscode from 'vscode';
 import { cbsCommandsData, findCommandInfo, extractCommandIdentifierFromPrefix, countParametersInCurrentTag } from './cbsData'; // Removed unused CbsCommandInfo, CbsParameterInfo
 import { CbsLinter } from './cbsLinter';
-import { formatLine, calculateInitialFormattingState, FormattingState } from './cbsFormatter'; // Import formatter logic
+import { formatLine, calculateInitialFormattingState, FormattingState, formatDocumentWithMapping, SourceMapEntry, goToOriginalLine, goToOriginalCharacter } from './cbsFormatter';
+
+// NEW: Define a decoration type for highlighting
+const foundRangeDecorationType = vscode.window.createTextEditorDecorationType({
+    backgroundColor: 'rgba(255, 255, 0, 0.3)', // Yellow background with some transparency
+    border: '1px solid rgba(200, 0, 0, 0.5)', // Slightly darker yellow border
+    borderRadius: '2px', // Slightly rounded corners
+    isWholeLine: false, // Only highlight the exact range
+    overviewRulerColor: 'yellow', // Show marker in the overview ruler
+    overviewRulerLane: vscode.OverviewRulerLane.Center
+});
+
 
 interface VariableLocation {
     name: string;
     location: vscode.Location;
     isDefinition: boolean;
 }
+
+// NEW: Structure to store preview context
+interface PreviewContext {
+    originalUri: vscode.Uri;
+    sourceMap: SourceMapEntry[];
+    formattedContent: string; // Store the content here
+}
+
+// NEW: Map to store context for active previews
+const previewContextMap = new Map<string, PreviewContext>(); // Key: Preview URI string
 
 function getVariableNameAtPosition(document: vscode.TextDocument, position: vscode.Position, allLocations: VariableLocation[]): string | undefined {
     for (const loc of allLocations) {
@@ -26,6 +47,10 @@ class CbsDefinitionProvider implements vscode.DefinitionProvider {
     }
 
     provideDefinition(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.ProviderResult<vscode.Definition | vscode.LocationLink[]> {
+        // Prevent running on preview documents
+        if (previewContextMap.has(document.uri.toString())) {
+            return undefined;
+        }
         const allLocations: VariableLocation[] = this.linter.parseDocumentForVariables(document);
         const varName = getVariableNameAtPosition(document, position, allLocations);
 
@@ -49,6 +74,10 @@ class CbsReferenceProvider implements vscode.ReferenceProvider {
     }
 
     provideReferences(document: vscode.TextDocument, position: vscode.Position, context: vscode.ReferenceContext, token: vscode.CancellationToken): vscode.ProviderResult<vscode.Location[]> {
+         // Prevent running on preview documents
+        if (previewContextMap.has(document.uri.toString())) {
+            return undefined;
+        }
         const allLocations: VariableLocation[] = this.linter.parseDocumentForVariables(document);
         const varName = getVariableNameAtPosition(document, position, allLocations);
 
@@ -65,6 +94,10 @@ class CbsReferenceProvider implements vscode.ReferenceProvider {
 }
 
 function isInsideCbsTag(document: vscode.TextDocument, position: vscode.Position): boolean {
+    // Prevent running on preview documents for tag-specific features
+    if (previewContextMap.has(document.uri.toString())) {
+        return false;
+    }
     const lineText = document.lineAt(position.line).text;
     const textBeforePosition = lineText.substring(0, position.character);
     const textAfterPosition = lineText.substring(position.character);
@@ -96,16 +129,229 @@ function isInsideCbsTag(document: vscode.TextDocument, position: vscode.Position
 
 let cbsLinter: CbsLinter;
 
+// NEW: Content provider for the virtual preview document
+class CbsPreviewContentProvider implements vscode.TextDocumentContentProvider {
+    // Provide content - VS Code calls this when opening the virtual doc
+    provideTextDocumentContent(uri: vscode.Uri): string | Thenable<string> {
+        const context = previewContextMap.get(uri.toString());
+        // We actually store the formatted content directly when creating the preview context
+        // This provider is mainly needed to satisfy the API, but the content comes from the map
+        // For simplicity, we'll retrieve it from the map if needed, but ideally, it's set beforehand.
+        // Let's refine this: store content in the map too.
+        return context?.formattedContent ?? ''; // Return stored content or empty string
+    }
+}
+
+// Refine PreviewContext to include content
+interface PreviewContext {
+    originalUri: vscode.Uri;
+    sourceMap: SourceMapEntry[];
+    formattedContent: string; // Store the content here
+}
+
+
 export function activate(context: vscode.ExtensionContext) {
 
   cbsLinter = new CbsLinter();
   cbsLinter.activate(context);
 
+  // --- Register Content Provider ---
+  const previewScheme = 'cbs-preview';
+  const previewProvider = new CbsPreviewContentProvider();
+  context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(previewScheme, previewProvider));
+
+  // --- Command: Show Formatted Preview ---
+  const showPreviewCommand = vscode.commands.registerCommand('cbs.showFormattedPreview', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.languageId !== 'cbs') {
+        vscode.window.showInformationMessage('Open a CBS file first to show the formatted preview.');
+        return;
+    }
+     // Prevent running on preview documents
+    if (previewContextMap.has(editor.document.uri.toString())) {
+        vscode.window.showInformationMessage('Cannot create a preview from a preview window.');
+        return;
+    }
+
+
+    const originalDocument = editor.document;
+    const options: vscode.FormattingOptions = { // Get formatting options from settings
+        tabSize: editor.options.tabSize as number || 4,
+        insertSpaces: editor.options.insertSpaces as boolean || true
+    };
+
+    try {
+        const { formattedText, sourceMap } = formatDocumentWithMapping(originalDocument, options);
+
+        // Create a unique URI for the preview
+        const previewUri = vscode.Uri.parse(`${previewScheme}:[Preview] ${vscode.workspace.asRelativePath(originalDocument.uri)}?_ts=${Date.now()}`);
+
+        // Store context BEFORE opening the document
+        previewContextMap.set(previewUri.toString(), {
+            originalUri: originalDocument.uri,
+            sourceMap: sourceMap,
+            formattedContent: formattedText // Store content
+        });
+
+        // Open the virtual document
+        const previewDoc = await vscode.workspace.openTextDocument(previewUri);
+        await vscode.window.showTextDocument(previewDoc, {
+            viewColumn: vscode.ViewColumn.Beside, // Open beside the original
+            preview: false, // Keep it open
+            preserveFocus: false // Focus the new preview window
+        });
+
+        // Set context key for the 'Go to Original' command visibility
+        vscode.commands.executeCommand('setContext', 'cbs.isPreviewActive', true);
+
+    } catch (error) {
+        console.error("Error generating CBS preview:", error);
+        vscode.window.showErrorMessage(`Failed to generate CBS formatted preview: ${error}`);
+    }
+  });
+  context.subscriptions.push(showPreviewCommand);
+
+
+  // --- Command: Go To Original Location (from Preview) ---
+  const goToOriginalCommand = vscode.commands.registerCommand('cbs.goToOriginalLocation', async () => {
+    console.log('GoToOriginal: Command triggered.'); // Log 1: Command start
+    const previewEditor = vscode.window.activeTextEditor;
+    if (!previewEditor || previewEditor.document.uri.scheme !== previewScheme) {
+        // Should not happen if 'when' clause is set correctly in package.json
+        console.log('GoToOriginal: Command triggered on non-preview editor or no active editor.'); // Log 2a: Wrong editor
+        return;
+    }
+    console.log('GoToOriginal: Active editor is a preview editor. URI:', previewEditor.document.uri.toString()); // Log 2b: Correct editor
+
+    const previewUriString = previewEditor.document.uri.toString();
+    const contextData = previewContextMap.get(previewUriString);
+
+    if (!contextData) {
+        console.error('GoToOriginal: Could not find context data for URI:', previewUriString); // Log 3a: Context not found
+        vscode.window.showErrorMessage('Could not find original source context for this preview.');
+        return;
+    }
+    console.log('GoToOriginal: Found context data. Original URI:', contextData.originalUri.toString()); // Log 3b: Context found
+
+    const previewSelection = previewEditor.selection;
+    const previewDocument = previewEditor.document;
+
+    // Determine which function to call based on selection
+    if (previewSelection.isEmpty) {
+        // User clicked, no text selected - go to the start of the original line
+        console.log(`GoToOriginal: No selection. Calling goToOriginalLine for position: Line ${previewSelection.active.line}, Char ${previewSelection.active.character}`);
+
+        // Find the target editor window for the original document
+        const targetEditor = vscode.window.visibleTextEditors.find(editor =>
+            editor.document.uri.toString() === contextData.originalUri.toString()
+        );
+
+        if (targetEditor) {
+            // Original document is visible, pass the editor and decoration
+            console.log('GoToOriginal (Line): Original document editor is visible. Passing editor and decoration.');
+            goToOriginalLine(
+                contextData.sourceMap,
+                previewSelection.active,
+                contextData.originalUri,
+                targetEditor.viewColumn, // Use the existing editor's view column
+                targetEditor,           // Pass the target editor instance
+                foundRangeDecorationType // Pass the decoration type
+            );
+        } else {
+            // Original document not visible, just navigate
+             console.log('GoToOriginal (Line): Original document editor not visible. Opening and selecting.');
+             goToOriginalLine(
+                contextData.sourceMap,
+                previewSelection.active,
+                contextData.originalUri,
+                vscode.ViewColumn.Active, // Let showTextDocument decide view column if opening new
+                undefined, // No editor to pass yet
+                undefined  // No decoration type needed if editor isn't ready
+            );
+        }
+    } else {
+        // User selected text - try to find the exact character range
+        console.log(`GoToOriginal: Selection detected. Calling goToOriginalCharacter for range: [${previewSelection.start.line}, ${previewSelection.start.character}] to [${previewSelection.end.line}, ${previewSelection.end.character}]`);
+
+        // Find the target editor window for the original document
+        const targetEditor = vscode.window.visibleTextEditors.find(editor =>
+            editor.document.uri.toString() === contextData.originalUri.toString()
+        );
+
+        if (targetEditor) {
+            // Original document is visible, pass the editor and decoration
+            console.log('GoToOriginal: Original document editor is visible. Passing editor and decoration.');
+            goToOriginalCharacter(
+                contextData.sourceMap,
+                previewSelection,
+                previewDocument,
+                contextData.originalUri,
+                targetEditor.viewColumn, // Use the existing editor's view column
+                targetEditor,           // Pass the target editor instance
+                foundRangeDecorationType // Pass the decoration type
+            );
+        } else {
+            // If the original document isn't visible, goToOriginalCharacter will open it.
+            // We won't be able to apply the decoration immediately in that case,
+            // but the selection highlighting will still work.
+            console.log('GoToOriginal: Original document editor not visible. Opening and selecting.');
+            goToOriginalCharacter(
+                contextData.sourceMap,
+                previewSelection,
+                previewDocument,
+                contextData.originalUri,
+                vscode.ViewColumn.Active, // Let showTextDocument decide view column if opening new
+                undefined, // No editor to pass yet
+                undefined  // No decoration type needed if editor isn't ready
+            );
+        }
+    }
+
+    // The actual navigation is now handled within goToOriginalLine/goToOriginalCharacter
+    // No need for the old manual mapping and navigation logic here.
+
+  });
+  context.subscriptions.push(goToOriginalCommand);
+
+
+  // --- Manage Context Key and Cleanup ---
+  context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(editor => {
+    if (editor && editor.document.uri.scheme === previewScheme) {
+        vscode.commands.executeCommand('setContext', 'cbs.isPreviewActive', true);
+    } else {
+        vscode.commands.executeCommand('setContext', 'cbs.isPreviewActive', false);
+    }
+  }));
+
+  // Cleanup map when preview documents are closed
+  context.subscriptions.push(vscode.workspace.onDidCloseTextDocument(document => {
+    if (document.uri.scheme === previewScheme) {
+        previewContextMap.delete(document.uri.toString());
+        // Check if any other preview windows are open before disabling context
+        let anyPreviewOpen = false;
+        for (const editor of vscode.window.visibleTextEditors) {
+            if (editor.document.uri.scheme === previewScheme) {
+                anyPreviewOpen = true;
+                break;
+            }
+        }
+        if (!anyPreviewOpen) {
+             vscode.commands.executeCommand('setContext', 'cbs.isPreviewActive', false);
+        }
+    }
+  }));
+
+  // --- Existing Providers ---
   const hoverProvider = vscode.languages.registerHoverProvider('cbs', {
     provideHover(document, position, token) {
+      // Prevent running on preview documents
+      if (previewContextMap.has(document.uri.toString())) {
+          return undefined;
+      }
       if (!isInsideCbsTag(document, position)) {
           return undefined;
       }
+      // ... (rest of hover logic)
 
       const range = document.getWordRangeAtPosition(position, /([\w#-]+|\?)/);
       if (!range) {
@@ -130,9 +376,14 @@ export function activate(context: vscode.ExtensionContext) {
 
   const signatureHelpProvider = vscode.languages.registerSignatureHelpProvider('cbs', {
     provideSignatureHelp(document, position, token, context) {
+       // Prevent running on preview documents
+       if (previewContextMap.has(document.uri.toString())) {
+           return undefined;
+       }
        if (!isInsideCbsTag(document, position)) {
         return undefined;
        }
+       // ... (rest of signature help logic)
 
       const lineText = document.lineAt(position.line).text;
       const textBeforeCursor = lineText.substring(0, position.character);
@@ -179,8 +430,12 @@ export function activate(context: vscode.ExtensionContext) {
     'cbs',
     {
         provideCompletionItems(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext) {
+             // Prevent running on preview documents
+            if (previewContextMap.has(document.uri.toString())) {
+                return undefined;
+            }
             let isValidTrigger = false;
-
+            // ... (rest of completion logic)
             // Check for TriggerCharacter
             if (context.triggerKind === vscode.CompletionTriggerKind.TriggerCharacter && ['[', '{'].includes(context.triggerCharacter ?? '')) {
                 isValidTrigger = true;
@@ -266,6 +521,11 @@ export function activate(context: vscode.ExtensionContext) {
   // --- Document Formatting Provider (Full Document) ---
   const documentFormattingProvider = vscode.languages.registerDocumentFormattingEditProvider('cbs', {
     provideDocumentFormattingEdits(document: vscode.TextDocument, options: vscode.FormattingOptions, token: vscode.CancellationToken): vscode.ProviderResult<vscode.TextEdit[]> {
+       // Prevent running on preview documents
+       if (previewContextMap.has(document.uri.toString())) {
+           vscode.window.showInformationMessage('Formatting is disabled for preview windows.');
+           return []; // Return empty edits for preview
+       }
       const edits: vscode.TextEdit[] = [];
       let currentState: FormattingState = { indentLevel: 0, inPureBlock: 0 };
 
@@ -275,6 +535,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         const line = document.lineAt(i);
+        // Use the original formatLine here, as we want the edits, not the mapping
         const { formattedText, nextState } = formatLine(line, currentState, options);
 
         if (formattedText !== null && formattedText !== line.text) {
@@ -290,6 +551,11 @@ export function activate(context: vscode.ExtensionContext) {
   // --- Document Range Formatting Provider (Selection) ---
   const rangeFormattingProvider = vscode.languages.registerDocumentRangeFormattingEditProvider('cbs', {
       provideDocumentRangeFormattingEdits(document: vscode.TextDocument, range: vscode.Range, options: vscode.FormattingOptions, token: vscode.CancellationToken): vscode.ProviderResult<vscode.TextEdit[]> {
+           // Prevent running on preview documents
+           if (previewContextMap.has(document.uri.toString())) {
+               vscode.window.showInformationMessage('Formatting is disabled for preview windows.');
+               return []; // Return empty edits for preview
+           }
           const edits: vscode.TextEdit[] = [];
           // Calculate the initial state just before the range starts
           let currentState = calculateInitialFormattingState(document, range.start.line, options);
@@ -301,6 +567,7 @@ export function activate(context: vscode.ExtensionContext) {
               }
 
               const line = document.lineAt(i);
+              // Use the original formatLine here
               const { formattedText, nextState } = formatLine(line, currentState, options);
 
               // Add edit if the line is within the range and needs formatting
@@ -316,6 +583,10 @@ export function activate(context: vscode.ExtensionContext) {
 
 
   context.subscriptions.push(
+    // Add new commands here
+    showPreviewCommand,
+    goToOriginalCommand,
+    // Existing providers
     hoverProvider,
     signatureHelpProvider,
     commandCompletionProvider,
@@ -323,11 +594,17 @@ export function activate(context: vscode.ExtensionContext) {
     rangeFormattingProvider,    // Register range formatter
     vscode.languages.registerDefinitionProvider('cbs', new CbsDefinitionProvider(cbsLinter)),
     vscode.languages.registerReferenceProvider('cbs', new CbsReferenceProvider(cbsLinter))
+    // Note: ContentProvider registration was pushed earlier
   );
+
+   // Set initial context
+   vscode.commands.executeCommand('setContext', 'cbs.isPreviewActive', false);
 }
 
 export function deactivate() {
     if (cbsLinter) {
         cbsLinter.dispose();
     }
+    foundRangeDecorationType.dispose(); // Dispose of the decoration type
+    previewContextMap.clear(); // Clear the map on deactivation
 }
