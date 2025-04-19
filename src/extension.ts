@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path'; // Import path module
 import { cbsCommandsData, findCommandInfo, extractCommandIdentifierFromPrefix, countParametersInCurrentTag } from './cbsData'; // Removed unused CbsCommandInfo, CbsParameterInfo
 import { CbsLinter } from './cbsLinter';
 import { formatLine, calculateInitialFormattingState, FormattingState, formatDocumentWithMapping, SourceMapEntry, goToOriginalLine, goToOriginalCharacter } from './cbsFormatter';
@@ -183,8 +184,10 @@ export function activate(context: vscode.ExtensionContext) {
     try {
         const { formattedText, sourceMap } = formatDocumentWithMapping(originalDocument, options);
 
-        // Create a unique URI for the preview
-        const previewUri = vscode.Uri.parse(`${previewScheme}:[Preview] ${vscode.workspace.asRelativePath(originalDocument.uri)}?_ts=${Date.now()}`);
+        // Create a unique URI for the preview, using only the base filename for clarity
+        const relativePath = vscode.workspace.asRelativePath(originalDocument.uri);
+        const filenameOnly = path.basename(relativePath); // Extract just the filename
+        const previewUri = vscode.Uri.parse(`${previewScheme}:CBS Preview: ${filenameOnly}?_ts=${Date.now()}`);
 
         // Store context BEFORE opening the document
         previewContextMap.set(previewUri.toString(), {
