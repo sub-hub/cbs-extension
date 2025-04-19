@@ -144,7 +144,8 @@ export const cbsCommandsData: CbsCommandInfo[] = [
   { name: 'dict_assert', aliases: ['object_assert', 'dictassert', 'objectassert'], description: 'Replaced with dictionary A with key B and value C inserted.', signatureLabel: 'dict_assert::A::B::C', parameters: [{ label: 'A (dictionary)' }, { label: 'B (key)' }, { label: 'C (value)' }] },
   { name: 'element', aliases: ['ele'], description: 'Access nested element in JSON object/array A using path B, C...', signatureLabel: 'element::A::B::[C...]', parameters: [{ label: 'A (JSON object/array)' }, { label: 'B (key/index)' }, { label: 'C... (nested keys/indices)' }] },
   // Utility Syntaxes
-  { name: 'slot', description: 'Used within #each blocks. Replaced with the current element being iterated over, identified by name A.', signatureLabel: 'slot::A', parameters: [{ label: 'A (item variable name from #each)' }] }, // Clarified usage
+  { name: 'slot', description: "If used in prompt template, pipeline or translator prompt ({{slot}}), it will be replaced to original slot content. Otherwise, it will not be replaced.", signatureLabel: 'slot' }, // Parameterless version
+  { name: 'slot', description: 'Used within #each blocks ({{slot::A}}). Replaced with the current element being iterated over, identified by name A.', signatureLabel: 'slot::A', parameters: [{ label: 'A (item variable name from #each)' }] }, // Parameterized version for #each
   { name: 'position', description: 'Replaced with lorebook content at position pt_A.', signatureLabel: 'position::A', parameters: [{ label: 'A (position name)' }] },
   { name: 'random', description: 'Replaced with a random value from parameters. Can use :: or : with , as separator (e.g., random::A::B or random:A,B).', signatureLabel: 'random:A,[B...]', parameters: [{ label: 'A, B... (values)' }], isPrefixCommand: true }, // Clarified separators
   { name: 'pick', description: 'Consistent random value from parameters for the same message. Can use :: or : with , as separator.', signatureLabel: 'pick:A,[B...]', parameters: [{ label: 'A, B... (values)' }], isPrefixCommand: true }, // Clarified separators
@@ -191,10 +192,25 @@ export function findCommandInfo(commandIdentifier: string): CbsCommandInfo | und
         if (!/^[#?\/]/.test(lowerCommandIdentifier) && cmd.aliases) {
            return cmd.aliases.some(alias => alias.toLowerCase() === lowerCommandIdentifier);
         }
+    return false;
+  });
+}
+
+// Helper function to find ALL command info entries by name or alias
+export function findAllCommandInfo(commandIdentifier: string): CbsCommandInfo[] {
+    const lowerCommandIdentifier = commandIdentifier.toLowerCase();
+    return cbsCommandsData.filter(cmd => {
+        // Check primary name (case-insensitive)
+        if (cmd.name.toLowerCase() === lowerCommandIdentifier) {
+            return true;
+        }
+        // Check aliases (case-insensitive) only if the identifier doesn't start with #, ?, /
+        if (!/^[#?\/]/.test(lowerCommandIdentifier) && cmd.aliases) {
+           return cmd.aliases.some(alias => alias.toLowerCase() === lowerCommandIdentifier);
+        }
         return false;
     });
 }
-
 
 // Helper function to get command identifier (prefix + name) from text preceding the cursor
 // e.g., finds '#if' in '{{#if cond::' or 'replace' in '{{replace::text'

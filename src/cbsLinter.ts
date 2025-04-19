@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { cbsCommandsData, findCommandInfo, CbsCommandInfo } from './cbsData'; // Assuming cbsData exports necessary types
+// Import the new findAllCommandInfo function
+import { cbsCommandsData, findCommandInfo, findAllCommandInfo, CbsCommandInfo } from './cbsData'; // Assuming cbsData exports necessary types
 
 // --- Interfaces ---
 interface VariableLocation {
@@ -221,14 +222,15 @@ export class CbsLinter {
             const params = parts.slice(1);
             const numParamsProvided = params.length;
 
-            const commandInfo = findCommandInfo(commandName);
+            // Use findAllCommandInfo to get all possible signatures
+            const commandInfos = findAllCommandInfo(commandName);
 
             const tagStartIndex = match.index;
             const startPos = document.positionAt(tagStartIndex);
             const endPos = document.positionAt(tagStartIndex + tagContentWithBraces.length);
             const range = new vscode.Range(startPos, endPos);
 
-            if (!commandInfo) {
+            if (commandInfos.length === 0) {
                 // Allow known variable commands explicitly
                 if (!['setvar', 'settempvar', 'getvar', 'gettempvar', 'getglobalvar', '?', 'calc'].includes(commandName)) {
                     diagnostics.push(new vscode.Diagnostic(
@@ -240,21 +242,37 @@ export class CbsLinter {
                 continue; // Skip further checks if command is unknown (or a variable command)
             }
 
-            // Parameter count check (basic version)
-            const requiredParams = commandInfo.parameters?.filter(p => !p.label.endsWith('?')).length ?? 0;
-            const totalParams = commandInfo.parameters?.length ?? 0;
+            // Check if the provided parameter count matches *any* of the valid signatures
+            let isValidUsage = false;
+            for (const commandInfo of commandInfos) {
+                const requiredParams = commandInfo.parameters?.filter(p => !p.label.includes('optional') && !p.label.startsWith('[') && !p.label.endsWith('?]')).length ?? 0;
+                const allowsVariableParams = commandInfo.signatureLabel.includes('...'); // Simple check for variable args
 
-            if (numParamsProvided < requiredParams) {
+                // Check if the number of parameters is valid for *this* signature
+                if (allowsVariableParams) {
+                    // If variable params are allowed, we only need to check the minimum required
+                    if (numParamsProvided >= requiredParams) {
+                        isValidUsage = true;
+                        break; // Found a valid signature
+                    }
+                } else {
+                    // Check for fixed-parameter signatures, the number of provided parameters meets the minimum required count
+                    if (numParamsProvided >= requiredParams) {
+                        isValidUsage = true;
+                        break; // Found a valid signature
+                    }
+                }
+            }
+
+            // If no valid signature matched the parameter count
+            if (!isValidUsage) {
+                const possibleSignatures = commandInfos.map(ci => `{{${ci.signatureLabel}}}`).join(' or ');
                 diagnostics.push(new vscode.Diagnostic(
                     range,
-                    `Command '${commandName}' requires at least ${requiredParams} parameter(s), but ${numParamsProvided} provided. Signature: {{${commandInfo.signatureLabel}}}`,
-                     vscode.DiagnosticSeverity.Error
-                 ));
-             }
-             // Removed check for too many parameters
-             // else if (numParamsProvided > totalParams) { ... }
-
-             // TODO: Add parameter type checking if feasible/needed
+                    `Incorrect parameter count for command '${commandName}'. Provided ${numParamsProvided} parameter(s). Valid signature(s): ${possibleSignatures}`,
+                    vscode.DiagnosticSeverity.Error
+                ));
+            }
         }
 
         return diagnostics;
