@@ -114,7 +114,14 @@
                 "description": "Delay in milliseconds before updating the preview after a change (debounce). Higher values reduce lag during typing."
             }
         }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "cbs.goToOriginalLocation",
+        "key": "alt+q",
+        "when": "cbs.isPreviewActive && editorTextFocus"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
