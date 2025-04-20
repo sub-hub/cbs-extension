@@ -2,7 +2,7 @@
   "name": "cbs-editor",
   "displayName": "RisuAI CBS Editor",
   "description": "Provides syntax highlighting and language support for Curly Braced Syntax (CBS) In RisuAI",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "publisher": "mollu",
   "license": "GPL-3.0-only",
   "homepage": "https://github.com/sub-hub/cbs-extension",
