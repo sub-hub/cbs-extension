@@ -240,106 +240,142 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(showPreviewCommand);
 
 
-  // --- Command: Go To Original Location (from Preview) ---
+  // --- Command: Go To Original Location (Sentence/Selection) ---
   const goToOriginalCommand = vscode.commands.registerCommand('cbs.goToOriginalLocation', async () => {
-    console.log('GoToOriginal: Command triggered.'); // Log 1: Command start
+    console.log('GoToOriginal (Sentence/Selection): Command triggered.');
     const previewEditor = vscode.window.activeTextEditor;
     if (!previewEditor || previewEditor.document.uri.scheme !== previewScheme) {
         // Should not happen if 'when' clause is set correctly in package.json
-        console.log('GoToOriginal: Command triggered on non-preview editor or no active editor.'); // Log 2a: Wrong editor
+    console.log('GoToOriginal (Sentence/Selection): Command triggered on non-preview editor or no active editor.');
         return;
     }
-    console.log('GoToOriginal: Active editor is a preview editor. URI:', previewEditor.document.uri.toString()); // Log 2b: Correct editor
+    console.log('GoToOriginal (Sentence/Selection): Active editor is a preview editor. URI:', previewEditor.document.uri.toString());
 
     const previewUriString = previewEditor.document.uri.toString();
     const contextData = previewContextMap.get(previewUriString);
 
     if (!contextData) {
-        console.error('GoToOriginal: Could not find context data for URI:', previewUriString); // Log 3a: Context not found
+        console.error('GoToOriginal (Sentence/Selection): Could not find context data for URI:', previewUriString);
         vscode.window.showErrorMessage('Could not find original source context for this preview.');
         return;
     }
-    console.log('GoToOriginal: Found context data. Original URI:', contextData.originalUri.toString()); // Log 3b: Context found
+    console.log('GoToOriginal (Sentence/Selection): Found context data. Original URI:', contextData.originalUri.toString());
 
-    const previewSelection = previewEditor.selection;
+    let selectionToSearch = previewEditor.selection;
     const previewDocument = previewEditor.document;
 
-    // Determine which function to call based on selection
-    if (previewSelection.isEmpty) {
-        // User clicked, no text selected - go to the start of the original line
-        console.log(`GoToOriginal: No selection. Calling goToOriginalLine for position: Line ${previewSelection.active.line}, Char ${previewSelection.active.character}`);
+    // NEW LOGIC: If selection is empty, select the non-whitespace part of the current line
+    if (selectionToSearch.isEmpty) {
+        const currentLineNumber = selectionToSearch.active.line;
+        const currentLine = previewDocument.lineAt(currentLineNumber);
+        const lineText = currentLine.text;
+        const trimmedText = lineText.trim();
 
-        // Find the target editor window for the original document
-        const targetEditor = vscode.window.visibleTextEditors.find(editor =>
-            editor.document.uri.toString() === contextData.originalUri.toString()
-        );
-
-        if (targetEditor) {
-            // Original document is visible, pass the editor and decoration
-            console.log('GoToOriginal (Line): Original document editor is visible. Passing editor and decoration.');
-            goToOriginalLine(
-                contextData.sourceMap,
-                previewSelection.active,
-                contextData.originalUri,
-                targetEditor.viewColumn, // Use the existing editor's view column
-                targetEditor,           // Pass the target editor instance
-                foundRangeDecorationType // Pass the decoration type
-            );
+        if (trimmedText.length > 0) {
+            const startChar = currentLine.firstNonWhitespaceCharacterIndex;
+            const endChar = startChar + trimmedText.length;
+            const startPos = new vscode.Position(currentLineNumber, startChar);
+            const endPos = new vscode.Position(currentLineNumber, endChar);
+            selectionToSearch = new vscode.Selection(startPos, endPos);
+            console.log(`GoToOriginal (Sentence/Selection): No selection, created selection for line content: "${trimmedText}"`);
         } else {
-            // Original document not visible, just navigate
-             console.log('GoToOriginal (Line): Original document editor not visible. Opening and selecting.');
-             goToOriginalLine(
-                contextData.sourceMap,
-                previewSelection.active,
-                contextData.originalUri,
-                vscode.ViewColumn.Active, // Let showTextDocument decide view column if opening new
-                undefined, // No editor to pass yet
-                undefined  // No decoration type needed if editor isn't ready
-            );
-        }
-    } else {
-        // User selected text - try to find the exact character range
-        console.log(`GoToOriginal: Selection detected. Calling goToOriginalCharacter for range: [${previewSelection.start.line}, ${previewSelection.start.character}] to [${previewSelection.end.line}, ${previewSelection.end.character}]`);
-
-        // Find the target editor window for the original document
-        const targetEditor = vscode.window.visibleTextEditors.find(editor =>
-            editor.document.uri.toString() === contextData.originalUri.toString()
-        );
-
-        if (targetEditor) {
-            // Original document is visible, pass the editor and decoration
-            console.log('GoToOriginal: Original document editor is visible. Passing editor and decoration.');
-            goToOriginalCharacter(
-                contextData.sourceMap,
-                previewSelection,
-                previewDocument,
-                contextData.originalUri,
-                targetEditor.viewColumn, // Use the existing editor's view column
-                targetEditor,           // Pass the target editor instance
-                foundRangeDecorationType // Pass the decoration type
-            );
-        } else {
-            // If the original document isn't visible, goToOriginalCharacter will open it.
-            // We won't be able to apply the decoration immediately in that case,
-            // but the selection highlighting will still work.
-            console.log('GoToOriginal: Original document editor not visible. Opening and selecting.');
-            goToOriginalCharacter(
-                contextData.sourceMap,
-                previewSelection,
-                previewDocument,
-                contextData.originalUri,
-                vscode.ViewColumn.Active, // Let showTextDocument decide view column if opening new
-                undefined, // No editor to pass yet
-                undefined  // No decoration type needed if editor isn't ready
-            );
+            // Line is empty or only whitespace, maybe fall back to line navigation or show message?
+            // For now, goToOriginalCharacter will handle the empty selection check internally.
+            console.log(`GoToOriginal (Sentence/Selection): No selection and line is empty/whitespace. Will likely show message.`);
         }
     }
 
-    // The actual navigation is now handled within goToOriginalLine/goToOriginalCharacter
-    // No need for the old manual mapping and navigation logic here.
+    // Always call goToOriginalCharacter, either with original selection or the derived line selection
+    console.log(`GoToOriginal (Sentence/Selection): Calling goToOriginalCharacter for range: [${selectionToSearch.start.line}, ${selectionToSearch.start.character}] to [${selectionToSearch.end.line}, ${selectionToSearch.end.character}]`);
 
+    // Find the target editor window for the original document
+    const targetEditor = vscode.window.visibleTextEditors.find(editor =>
+        editor.document.uri.toString() === contextData.originalUri.toString()
+    );
+
+    if (targetEditor) {
+        // Original document is visible, pass the editor and decoration
+        console.log('GoToOriginal (Sentence/Selection): Original document editor is visible. Passing editor and decoration.');
+        goToOriginalCharacter(
+            contextData.sourceMap,
+            selectionToSearch, // Use the potentially modified selection
+            previewDocument,
+            contextData.originalUri,
+            targetEditor.viewColumn, // Use the existing editor's view column
+            targetEditor,           // Pass the target editor instance
+            foundRangeDecorationType // Pass the decoration type
+        );
+    } else {
+        // If the original document isn't visible, goToOriginalCharacter will open it.
+        console.log('GoToOriginal (Sentence/Selection): Original document editor not visible. Opening and selecting.');
+        goToOriginalCharacter(
+            contextData.sourceMap,
+            selectionToSearch, // Use the potentially modified selection
+            previewDocument,
+            contextData.originalUri,
+            vscode.ViewColumn.Active, // Let showTextDocument decide view column if opening new
+            undefined, // No editor to pass yet
+            undefined  // No decoration type needed if editor isn't ready
+        );
+    }
   });
   context.subscriptions.push(goToOriginalCommand);
+
+
+  // --- Command: Go To Original Location (Line) ---
+  const goToOriginalLineCommand = vscode.commands.registerCommand('cbs.goToOriginalLocationLine', async () => {
+    console.log('GoToOriginal (Line): Command triggered.');
+    const previewEditor = vscode.window.activeTextEditor;
+    if (!previewEditor || previewEditor.document.uri.scheme !== previewScheme) {
+        console.log('GoToOriginal (Line): Command triggered on non-preview editor or no active editor.');
+        return;
+    }
+    console.log('GoToOriginal (Line): Active editor is a preview editor. URI:', previewEditor.document.uri.toString());
+
+    const previewUriString = previewEditor.document.uri.toString();
+    const contextData = previewContextMap.get(previewUriString);
+
+    if (!contextData) {
+        console.error('GoToOriginal (Line): Could not find context data for URI:', previewUriString);
+        vscode.window.showErrorMessage('Could not find original source context for this preview.');
+        return;
+    }
+    console.log('GoToOriginal (Line): Found context data. Original URI:', contextData.originalUri.toString());
+
+    const previewPosition = previewEditor.selection.active; // Always use the active cursor position
+
+    console.log(`GoToOriginal (Line): Calling goToOriginalLine for position: Line ${previewPosition.line}, Char ${previewPosition.character}`);
+
+    // Find the target editor window for the original document
+    const targetEditor = vscode.window.visibleTextEditors.find(editor =>
+        editor.document.uri.toString() === contextData.originalUri.toString()
+    );
+
+    if (targetEditor) {
+        // Original document is visible, pass the editor and decoration
+        console.log('GoToOriginal (Line): Original document editor is visible. Passing editor and decoration.');
+        goToOriginalLine(
+            contextData.sourceMap,
+            previewPosition,
+            contextData.originalUri,
+            targetEditor.viewColumn, // Use the existing editor's view column
+            targetEditor,           // Pass the target editor instance
+            foundRangeDecorationType // Pass the decoration type
+        );
+    } else {
+        // Original document not visible, just navigate
+         console.log('GoToOriginal (Line): Original document editor not visible. Opening and selecting.');
+         goToOriginalLine(
+            contextData.sourceMap,
+            previewPosition,
+            contextData.originalUri,
+            vscode.ViewColumn.Active, // Let showTextDocument decide view column if opening new
+            undefined, // No editor to pass yet
+            undefined  // No decoration type needed if editor isn't ready
+        );
+    }
+  });
+  context.subscriptions.push(goToOriginalLineCommand); // Register the new command
 
 
   // --- Manage Context Key and Cleanup ---
@@ -709,9 +745,10 @@ export function activate(context: vscode.ExtensionContext) {
 
 
   context.subscriptions.push(
-    // Add new commands here
+    // Commands
     showPreviewCommand,
     goToOriginalCommand,
+    goToOriginalLineCommand, // Added new command registration
     // Existing providers
     hoverProvider,
     signatureHelpProvider,

@@ -64,7 +64,12 @@
       },
       {
         "command": "cbs.goToOriginalLocation",
-        "title": "CBS: Go To Original Location",
+        "title": "CBS: Go To Original Location (Sentence/Selection)",
+        "category": "CBS"
+      },
+      {
+        "command": "cbs.goToOriginalLocationLine",
+        "title": "CBS: Go To Original Location (Line)",
         "category": "CBS"
       }
     ],
@@ -76,6 +81,10 @@
         },
         {
           "command": "cbs.goToOriginalLocation",
+          "when": "cbs.isPreviewActive"
+        },
+        {
+          "command": "cbs.goToOriginalLocationLine",
           "when": "cbs.isPreviewActive"
         }
       ],
@@ -89,6 +98,11 @@
           "command": "cbs.goToOriginalLocation",
           "when": "cbs.isPreviewActive",
           "group": "navigation@1"
+        },
+        {
+            "command": "cbs.goToOriginalLocationLine",
+            "when": "cbs.isPreviewActive",
+            "group": "navigation@2"
         }
       ]
     },
