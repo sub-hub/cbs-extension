@@ -303,6 +303,10 @@ export class CbsLinter {
         // Second pass: Check references
         locations.forEach(loc => {
             if (!loc.isDefinition) {
+                // skip toggle variables
+                if(loc.name.includes('toggle_')){
+                    return;
+                }
                 // Simple check: Is the variable defined *anywhere* in the file?
                 // TODO: Implement scope checking (e.g., temp vars only valid after definition)
                 if (!definedVars.has(loc.name)) {
