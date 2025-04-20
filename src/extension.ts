@@ -261,66 +261,83 @@ export function activate(context: vscode.ExtensionContext) {
     }
     console.log('GoToOriginal (Sentence/Selection): Found context data. Original URI:', contextData.originalUri.toString());
 
-    let selectionToSearch = previewEditor.selection;
+    const previewSelection = previewEditor.selection; // The actual user selection
     const previewDocument = previewEditor.document;
-    const originalCursorPosition = previewEditor.selection.active; // Store the actual click position regardless
-    const wasInitiallyEmpty = selectionToSearch.isEmpty; // Check if it was a click *before* potentially modifying selectionToSearch
+    const originalCursorPosition = previewSelection.active; // Store the actual click/cursor position
+    const wasInitiallyEmpty = previewSelection.isEmpty; // Check if it was a click or drag
 
-    // NEW LOGIC: If selection is empty, select the non-whitespace part of the current line
-    if (wasInitiallyEmpty) { // Use the flag here
-        const currentLineNumber = selectionToSearch.active.line;
+    let selectionToSearch: vscode.Selection; // This will be the range used for mapping (usually the start line)
+    let previewLineText: string | undefined = undefined; // Text of the full line in preview
+    let previewSelectedText: string | undefined = undefined; // Text of the user's selection
+
+    if (wasInitiallyEmpty) {
+        // CLICK / NO SELECTION: Select the non-whitespace part of the current line for searching
+        const currentLineNumber = previewSelection.active.line;
         const currentLine = previewDocument.lineAt(currentLineNumber);
-        const lineText = currentLine.text;
-        const trimmedText = lineText.trim();
+        previewLineText = currentLine.text; // Get the full line text
+        const trimmedLineText = previewLineText.trim();
 
-        if (trimmedText.length > 0) {
+        if (trimmedLineText.length > 0) {
             const startChar = currentLine.firstNonWhitespaceCharacterIndex;
-            const endChar = startChar + trimmedText.length;
+            const endChar = startChar + trimmedLineText.length;
             const startPos = new vscode.Position(currentLineNumber, startChar);
             const endPos = new vscode.Position(currentLineNumber, endChar);
-            selectionToSearch = new vscode.Selection(startPos, endPos);
-            console.log(`GoToOriginal (Sentence/Selection): No selection, created selection for line content: "${trimmedText}"`);
+            selectionToSearch = new vscode.Selection(startPos, endPos); // Use this derived selection for mapping/search
+            previewSelectedText = trimmedLineText; // The text to search for is the trimmed line content
+            console.log(`GoToOriginal (Sentence/Selection): No selection. Searching for line content: "${previewSelectedText}"`);
         } else {
-            // Line is empty or only whitespace, maybe fall back to line navigation or show message?
-            // For now, goToOriginalCharacter will handle the empty selection check internally.
-            console.log(`GoToOriginal (Sentence/Selection): No selection and line is empty/whitespace. Will likely show message.`);
+            // Line is empty or only whitespace. Fallback to line navigation.
+            console.log(`GoToOriginal (Sentence/Selection): No selection and line is empty/whitespace. Falling back to line navigation.`);
+            // Directly call goToOriginalLine here or let goToOriginalCharacter handle the empty previewSelectedText case.
+            // Let's modify goToOriginalCharacter to handle it.
+            selectionToSearch = previewSelection; // Use original empty selection for mapping
+            previewSelectedText = ""; // Indicate no text to search
         }
+    } else {
+        // DRAG SELECTION: Use the user's selection
+        selectionToSearch = previewSelection; // Use the actual selection for mapping start line
+        previewSelectedText = previewDocument.getText(previewSelection); // Get the selected text
+        // Get the text of the line where the selection starts
+        previewLineText = previewDocument.lineAt(previewSelection.start.line).text;
+        console.log(`GoToOriginal (Sentence/Selection): User selection. Line text: "${previewLineText}", Selected text: "${previewSelectedText}"`);
     }
 
-    // Always call goToOriginalCharacter, either with original selection or the derived line selection
-    console.log(`GoToOriginal (Sentence/Selection): Calling goToOriginalCharacter for range: [${selectionToSearch.start.line}, ${selectionToSearch.start.character}] to [${selectionToSearch.end.line}, ${selectionToSearch.end.character}]`);
+    // Ensure we have text to search if we derived it from an empty selection line
+    if (!previewSelectedText && wasInitiallyEmpty) {
+         console.log(`GoToOriginal (Sentence/Selection): No searchable text derived from empty line. Aborting character search.`);
+         // Optionally call goToOriginalLine as a fallback here if desired
+         // goToOriginalLine(...)
+         return; // Stop processing for character search
+    }
 
-    // Find the target editor window for the original document
+
+    // Call goToOriginalCharacter with the necessary info
+    console.log(`GoToOriginal (Sentence/Selection): Calling goToOriginalCharacter. Mapping starts at line ${selectionToSearch.start.line}.`);
+
+     // Find the target editor window for the original document
     const targetEditor = vscode.window.visibleTextEditors.find(editor =>
         editor.document.uri.toString() === contextData.originalUri.toString()
     );
 
+    // Prepare arguments for goToOriginalCharacter
+    const args = {
+        sourceMap: contextData.sourceMap,
+        previewSelectionForMapping: selectionToSearch, // Selection used to find the original line
+        previewLineText: previewLineText,             // Full text of the preview line
+        previewSelectedText: previewSelectedText,     // Text selected by user (or derived line text)
+        originalDocUri: contextData.originalUri,
+        originalCursorPosition: wasInitiallyEmpty ? originalCursorPosition : undefined, // Pass click position only if no drag
+        targetViewColumn: targetEditor ? targetEditor.viewColumn : vscode.ViewColumn.Active,
+        targetEditor: targetEditor, // Pass editor if visible
+        decorationType: targetEditor ? foundRangeDecorationType : undefined // Pass decoration if editor visible
+    };
+
     if (targetEditor) {
-        // Original document is visible, pass the editor and decoration
-        console.log('GoToOriginal (Sentence/Selection): Original document editor is visible. Passing editor and decoration.');
-        goToOriginalCharacter(
-            contextData.sourceMap,
-            selectionToSearch, // Use the potentially modified selection
-            previewDocument,
-            contextData.originalUri,
-            targetEditor.viewColumn, // Use the existing editor's view column
-            targetEditor,           // Pass the target editor instance
-            foundRangeDecorationType, // Pass the decoration type
-            wasInitiallyEmpty ? originalCursorPosition : undefined // Pass position only if it was a click
-        );
+        console.log('GoToOriginal (Sentence/Selection): Original document editor is visible.');
+        goToOriginalCharacter(args);
     } else {
-        // If the original document isn't visible, goToOriginalCharacter will open it.
         console.log('GoToOriginal (Sentence/Selection): Original document editor not visible. Opening and selecting.');
-        goToOriginalCharacter(
-            contextData.sourceMap,
-            selectionToSearch, // Use the potentially modified selection
-            previewDocument,
-            contextData.originalUri,
-            vscode.ViewColumn.Active, // Let showTextDocument decide view column if opening new
-            undefined, // No editor to pass yet
-            undefined, // No decoration type needed if editor isn't ready
-            wasInitiallyEmpty ? originalCursorPosition : undefined // Pass position only if it was a click
-        );
+        goToOriginalCharacter(args); // goToOriginalCharacter handles opening
     }
   });
   context.subscriptions.push(goToOriginalCommand);

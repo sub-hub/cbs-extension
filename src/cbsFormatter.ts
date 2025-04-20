@@ -380,19 +380,58 @@ export function goToOriginalLine(
     }
 }
 
+// NEW: Interface for goToOriginalCharacter arguments
+interface GoToOriginalCharArgs {
+    sourceMap: SourceMapEntry[];
+    previewSelectionForMapping: vscode.Selection; // Selection used to find the original line (might be user selection or derived line selection)
+    previewLineText?: string;                     // Full text of the relevant preview line (trimmed if derived)
+    previewSelectedText?: string;                 // Text selected by user (trimmed if derived)
+    originalDocUri: vscode.Uri;
+    originalCursorPosition?: vscode.Position;     // The actual position clicked by the user in the preview (if not a drag)
+    targetViewColumn?: vscode.ViewColumn;
+    targetEditor?: vscode.TextEditor;
+    decorationType?: vscode.TextEditorDecorationType;
+}
+
+
 // NEW: Function to navigate to the original character position (using text search)
-export function goToOriginalCharacter(
-    sourceMap: SourceMapEntry[],
-    formattedSelection: vscode.Selection,
-    formattedDoc: vscode.TextDocument, // Need the formatted doc content
-    originalDocUri: vscode.Uri,
-    targetViewColumn?: vscode.ViewColumn, // Optional target view column
-    targetEditor?: vscode.TextEditor, // Optional: Editor to apply decoration
-    decorationType?: vscode.TextEditorDecorationType, // Optional: Decoration to apply
-    originalCursorPosition?: vscode.Position // NEW: The actual position clicked by the user in the preview
-): void {
-    // Use the line from the original cursor position if provided (click case), otherwise use the selection start (drag case)
-    const startLine = originalCursorPosition ? originalCursorPosition.line : formattedSelection.start.line;
+export function goToOriginalCharacter(args: GoToOriginalCharArgs): void {
+    const {
+        sourceMap,
+        previewSelectionForMapping,
+        previewLineText,
+        previewSelectedText,
+        originalDocUri,
+        originalCursorPosition,
+        targetViewColumn,
+        targetEditor,
+        decorationType
+    } = args;
+
+    // Handle cases where essential text is missing (e.g., empty line click)
+    if (!previewSelectedText || previewSelectedText.trim().length === 0) {
+        // If text is empty, fall back to line navigation using the mapping selection start
+        console.log("goToOriginalCharacter: No selected text provided, falling back to line navigation.");
+        goToOriginalLine(
+            sourceMap,
+            previewSelectionForMapping.start, // Use the start of the selection used for mapping
+            originalDocUri,
+            targetViewColumn,
+            targetEditor,
+            decorationType
+        );
+        return;
+    }
+     // Also check previewLineText, although it should generally exist if previewSelectedText does
+     if (!previewLineText || previewLineText.trim().length === 0) {
+        console.warn("goToOriginalCharacter: previewLineText is missing or empty, falling back to simpler search.");
+        // Fallback logic might be needed here, perhaps just searching for previewSelectedText directly
+        // For now, let's proceed but the more robust search might fail.
+    }
+
+
+    // Use the start line from the selection that was used for mapping
+    const startLine = previewSelectionForMapping.start.line;
 
     // Find the map entry for the start of the selection
     const startEntry = findMapEntryForFormattedLine(sourceMap, startLine);
@@ -403,97 +442,120 @@ export function goToOriginalCharacter(
     }
 
     const originalTargetLineNumber = startEntry.originalLine;
-
-    // Get the selected text from the formatted document
-    let selectedText = formattedDoc.getText(formattedSelection);
-    selectedText = selectedText.trim(); // Trim whitespace
-    if (!selectedText || selectedText.trim().length === 0) {
-        vscode.window.showInformationMessage("Please select some text to find its original location.");
-        return; // Nothing selected or only whitespace
-    }
+    const searchText = previewSelectedText.trim(); // Use the trimmed selected text for searching
+    const searchLineText = previewLineText?.trim(); // Use the trimmed line text for the primary search
 
     // Open the original document and search within the target line
     vscode.workspace.openTextDocument(originalDocUri).then(originalDoc => {
         if (originalTargetLineNumber >= originalDoc.lineCount) {
-             vscode.window.showErrorMessage(`Original line number ${originalTargetLineNumber} is out of bounds.`);
+             vscode.window.showErrorMessage(`Original line number ${originalTargetLineNumber + 1} is out of bounds.`);
              return;
         }
         const originalLine = originalDoc.lineAt(originalTargetLineNumber);
         const originalLineText = originalLine.text;
 
-        // Search for the selected text within the original line
-        const foundIndex = originalLineText.indexOf(selectedText);
+        // --- NEW Selected Text Search Logic ---
+        let foundLineIndex = -1;
+        // Only search for the line text if it was provided and different from the selected text
+        if (searchLineText && searchLineText !== searchText) {
+            foundLineIndex = originalLineText.indexOf(searchLineText);
+        }
 
-        if (foundIndex !== -1) {
-            // Found it! Now determine the selection based on whether it was a click or drag.
+        let foundSelectionIndex = -1;
+        let searchStartIndexForSelection = 0;
+
+        if (foundLineIndex !== -1 && searchLineText) { // Add check for searchLineText here
+            // If the line was found, search for the selection *within* that found line segment
+            searchStartIndexForSelection = foundLineIndex;
+            // Now searchLineText is guaranteed to be a string
+            const lineSegment = originalLineText.substring(foundLineIndex, foundLineIndex + searchLineText.length);
+            foundSelectionIndex = lineSegment.indexOf(searchText);
+            if (foundSelectionIndex !== -1) {
+                // Adjust index to be relative to the start of the original line
+                foundSelectionIndex += foundLineIndex;
+            }
+             console.log(`Found line text "${searchLineText}" at index ${foundLineIndex}. Searching for "${searchText}" within it.`);
+        } else {
+            // If the full line wasn't found (or wasn't searched for), search the entire original line for the selected text
+            console.log(`Line text "${searchLineText}" not found or not searched. Searching entire original line for "${searchText}".`);
+            foundSelectionIndex = originalLineText.indexOf(searchText);
+            searchStartIndexForSelection = 0; // Search started from beginning of original line
+        }
+        // --- END NEW SEARCH LOGIC ---
+
+
+        if (foundSelectionIndex !== -1) {
+            // Found the selected text!
+            console.log(`Found selected text "${searchText}" at index ${foundSelectionIndex} in original line.`);
             let originalSelection: vscode.Selection;
-            const originalStartPosition = new vscode.Position(originalTargetLineNumber, foundIndex);
-            const originalEndPosition = new vscode.Position(originalTargetLineNumber, foundIndex + selectedText.length);
+            const originalStartPosition = new vscode.Position(originalTargetLineNumber, foundSelectionIndex);
+            const originalEndPosition = new vscode.Position(originalTargetLineNumber, foundSelectionIndex + searchText.length);
 
-            // Use the originalCursorPosition if it was provided (indicating a click)
             if (originalCursorPosition) {
-                 // CLICK CASE: Try to map the character offset relative to the start of the found text
-                 // Calculate offset of the click relative to the start of the *formatted selection* used for search
-                 // Note: formattedSelection might have been expanded to the whole line in extension.ts
-                 // We need the offset relative to the *start of the line* in the preview.
-                 const clickOffsetInPreviewLine = originalCursorPosition.character;
+                // CLICK CASE: Map character offset relative to the start of the *found selection*
+                console.log("Click detected. Calculating precise cursor position.");
+                // Find start character of the *selected text* within the *preview line*
+                const selectedTextStartIndexInPreview = previewLineText?.indexOf(searchText) ?? -1;
 
-                 // Find the start character of the *selected text* within the formatted line
-                 const selectedTextStartIndexInFormatted = formattedDoc.lineAt(startLine).text.indexOf(selectedText.trim()); // Use trimmed search text
+                let targetCharIndex = foundSelectionIndex; // Default to start of found text
 
-                 let targetCharIndex = foundIndex; // Default to start of found text
-                 if (selectedTextStartIndexInFormatted !== -1) {
+                if (selectedTextStartIndexInPreview !== -1 && previewLineText) {
                     // Calculate the offset of the click *relative to the start of the matched text* in the preview
-                    const clickOffsetRelativeToFoundText = clickOffsetInPreviewLine - selectedTextStartIndexInFormatted;
+                    const clickOffsetRelativeToFoundText = originalCursorPosition.character - selectedTextStartIndexInPreview;
                     // Clamp the offset to be within the bounds of the found text length in the original
-                    const safeOffset = Math.max(0, Math.min(clickOffsetRelativeToFoundText, selectedText.length));
-                    targetCharIndex = foundIndex + safeOffset;
-                 } else {
-                     // Fallback if we couldn't find the selected text start in the formatted line (shouldn't happen often)
-                     console.warn("Could not precisely map click offset; placing cursor at start of found text.");
-                 }
+                    const safeOffset = Math.max(0, Math.min(clickOffsetRelativeToFoundText, searchText.length));
+                    targetCharIndex = foundSelectionIndex + safeOffset;
+                    console.log(`Preview click offset relative to found text: ${clickOffsetRelativeToFoundText}, Safe offset: ${safeOffset}, Target char index: ${targetCharIndex}`);
+                } else {
+                    console.warn("Could not find selected text start in preview line or previewLineText missing; placing cursor at start of found text in original.");
+                }
 
-                 const targetPosition = new vscode.Position(originalTargetLineNumber, targetCharIndex);
-                 originalSelection = new vscode.Selection(targetPosition, targetPosition); // Zero-width selection at calculated position
+                const targetPosition = new vscode.Position(originalTargetLineNumber, targetCharIndex);
+                originalSelection = new vscode.Selection(targetPosition, targetPosition); // Zero-width selection
             } else {
-                // DRAG CASE (or fallback if originalCursorPosition wasn't passed): Select the entire found range.
+                // DRAG CASE: Select the entire found range of the selected text.
+                 console.log("Drag detected. Selecting the entire found range.");
                 originalSelection = new vscode.Selection(originalStartPosition, originalEndPosition);
             }
 
-            // Define the range of the *found text* for highlighting purposes
-            const originalHighlightRange = new vscode.Range(
-                originalStartPosition,
-                originalEndPosition
-            );
+            // Define the range of the *found selected text* for highlighting
+            const originalHighlightRange = new vscode.Range(originalStartPosition, originalEndPosition);
 
-            // Show the original document and set the calculated selection (either zero-width or range)
+            // Show the original document and set the calculated selection
             vscode.window.showTextDocument(originalDoc, {
-                selection: originalSelection, // Use the determined selection
+                selection: originalSelection,
                 viewColumn: targetViewColumn ?? vscode.ViewColumn.Active,
                 preserveFocus: false,
                 preview: false
             }).then(editor => {
-                // Reveal the target position
                 editor.revealRange(originalSelection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 
-                // Apply temporary highlight to the found text range if editor and decorationType are provided
                 if (targetEditor && decorationType && editor.document.uri.toString() === targetEditor.document.uri.toString()) {
-                    targetEditor.setDecorations(decorationType, [originalHighlightRange]); // Highlight the found text
-                    // Remove the highlight after a short delay
+                    console.log(`Applying decoration to range: [${originalHighlightRange.start.line}, ${originalHighlightRange.start.character}] to [${originalHighlightRange.end.line}, ${originalHighlightRange.end.character}]`);
+                    targetEditor.setDecorations(decorationType, [originalHighlightRange]);
                     setTimeout(() => {
                         targetEditor.setDecorations(decorationType, []);
-                    }, 3000); // Highlight duration
+                    }, 3000);
+                } else {
+                     console.log("Skipping decoration: Target editor or decoration type not provided or editor mismatch.");
                 }
             });
 
         } else {
-            // If not found on the mapped line
-            // For now, just show a message. The formatting might have changed the text too much.
-            vscode.window.showWarningMessage(`Could not find the exact text "${selectedText}" in the original line ${originalTargetLineNumber + 1}. Formatting might have altered it.`);
-            // As a fallback, maybe just go to the start of the original line?
-             goToOriginalLine(sourceMap, formattedSelection.start, originalDocUri, targetViewColumn); // Pass view column to fallback
+            // If the selected text was not found even after trying the line search
+            vscode.window.showWarningMessage(`Could not find the exact text "${searchText}" in the original line ${originalTargetLineNumber + 1}. Formatting might have altered it.`);
+            // Fallback to line navigation
+            console.log("Selected text not found, falling back to line navigation.");
+            goToOriginalLine(
+                sourceMap,
+                previewSelectionForMapping.start, // Use the start of the selection used for mapping
+                originalDocUri,
+                targetViewColumn,
+                targetEditor,
+                decorationType
+            );
         }
-    }, (err: any) => { // Attach catch to openTextDocument promise and type err
+    }, (err: any) => {
          vscode.window.showErrorMessage(`Error opening original document: ${err}`);
     });
 }
