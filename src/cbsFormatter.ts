@@ -357,7 +357,7 @@ export function goToOriginalLine(
             vscode.window.showTextDocument(doc, {
                 selection: selectionRange, // Navigate to the start of the line
                 viewColumn: targetViewColumn ?? vscode.ViewColumn.Active,
-                preserveFocus: true,
+                preserveFocus: false,
                 preview: false
             }).then(editor => {
                 // Reveal the start of the line
@@ -369,7 +369,7 @@ export function goToOriginalLine(
                     // Remove the highlight after a short delay
                     setTimeout(() => {
                         targetEditor.setDecorations(decorationType, []);
-                    }, 3000); // Highlight duration
+                    }, 1500); // Highlight duration
                 }
             });
         }, (err: any) => { // Add error handling for opening document
@@ -432,7 +432,7 @@ export function goToOriginalCharacter(
             vscode.window.showTextDocument(originalDoc, {
                 selection: originalRange, // Select the found text
                 viewColumn: targetViewColumn ?? vscode.ViewColumn.Active,
-                preserveFocus: true,
+                preserveFocus: false,
                 preview: false
             }).then(editor => {
                 // Reveal the range
