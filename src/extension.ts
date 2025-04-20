@@ -263,9 +263,11 @@ export function activate(context: vscode.ExtensionContext) {
 
     let selectionToSearch = previewEditor.selection;
     const previewDocument = previewEditor.document;
+    const originalCursorPosition = previewEditor.selection.active; // Store the actual click position regardless
+    const wasInitiallyEmpty = selectionToSearch.isEmpty; // Check if it was a click *before* potentially modifying selectionToSearch
 
     // NEW LOGIC: If selection is empty, select the non-whitespace part of the current line
-    if (selectionToSearch.isEmpty) {
+    if (wasInitiallyEmpty) { // Use the flag here
         const currentLineNumber = selectionToSearch.active.line;
         const currentLine = previewDocument.lineAt(currentLineNumber);
         const lineText = currentLine.text;
@@ -303,7 +305,8 @@ export function activate(context: vscode.ExtensionContext) {
             contextData.originalUri,
             targetEditor.viewColumn, // Use the existing editor's view column
             targetEditor,           // Pass the target editor instance
-            foundRangeDecorationType // Pass the decoration type
+            foundRangeDecorationType, // Pass the decoration type
+            wasInitiallyEmpty ? originalCursorPosition : undefined // Pass position only if it was a click
         );
     } else {
         // If the original document isn't visible, goToOriginalCharacter will open it.
@@ -315,7 +318,8 @@ export function activate(context: vscode.ExtensionContext) {
             contextData.originalUri,
             vscode.ViewColumn.Active, // Let showTextDocument decide view column if opening new
             undefined, // No editor to pass yet
-            undefined  // No decoration type needed if editor isn't ready
+            undefined, // No decoration type needed if editor isn't ready
+            wasInitiallyEmpty ? originalCursorPosition : undefined // Pass position only if it was a click
         );
     }
   });

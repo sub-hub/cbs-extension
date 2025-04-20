@@ -388,9 +388,11 @@ export function goToOriginalCharacter(
     originalDocUri: vscode.Uri,
     targetViewColumn?: vscode.ViewColumn, // Optional target view column
     targetEditor?: vscode.TextEditor, // Optional: Editor to apply decoration
-    decorationType?: vscode.TextEditorDecorationType // Optional: Decoration to apply
+    decorationType?: vscode.TextEditorDecorationType, // Optional: Decoration to apply
+    originalCursorPosition?: vscode.Position // NEW: The actual position clicked by the user in the preview
 ): void {
-    const startLine = formattedSelection.start.line;
+    // Use the line from the original cursor position if provided (click case), otherwise use the selection start (drag case)
+    const startLine = originalCursorPosition ? originalCursorPosition.line : formattedSelection.start.line;
 
     // Find the map entry for the start of the selection
     const startEntry = findMapEntryForFormattedLine(sourceMap, startLine);
@@ -423,24 +425,60 @@ export function goToOriginalCharacter(
         const foundIndex = originalLineText.indexOf(selectedText);
 
         if (foundIndex !== -1) {
-            // Found it! Calculate the range in the original document
+            // Found it! Now determine the selection based on whether it was a click or drag.
+            let originalSelection: vscode.Selection;
             const originalStartPosition = new vscode.Position(originalTargetLineNumber, foundIndex);
             const originalEndPosition = new vscode.Position(originalTargetLineNumber, foundIndex + selectedText.length);
-            const originalRange = new vscode.Range(originalStartPosition, originalEndPosition);
 
-            // Show the original document and select the range
+            // Use the originalCursorPosition if it was provided (indicating a click)
+            if (originalCursorPosition) {
+                 // CLICK CASE: Try to map the character offset relative to the start of the found text
+                 // Calculate offset of the click relative to the start of the *formatted selection* used for search
+                 // Note: formattedSelection might have been expanded to the whole line in extension.ts
+                 // We need the offset relative to the *start of the line* in the preview.
+                 const clickOffsetInPreviewLine = originalCursorPosition.character;
+
+                 // Find the start character of the *selected text* within the formatted line
+                 const selectedTextStartIndexInFormatted = formattedDoc.lineAt(startLine).text.indexOf(selectedText.trim()); // Use trimmed search text
+
+                 let targetCharIndex = foundIndex; // Default to start of found text
+                 if (selectedTextStartIndexInFormatted !== -1) {
+                    // Calculate the offset of the click *relative to the start of the matched text* in the preview
+                    const clickOffsetRelativeToFoundText = clickOffsetInPreviewLine - selectedTextStartIndexInFormatted;
+                    // Clamp the offset to be within the bounds of the found text length in the original
+                    const safeOffset = Math.max(0, Math.min(clickOffsetRelativeToFoundText, selectedText.length));
+                    targetCharIndex = foundIndex + safeOffset;
+                 } else {
+                     // Fallback if we couldn't find the selected text start in the formatted line (shouldn't happen often)
+                     console.warn("Could not precisely map click offset; placing cursor at start of found text.");
+                 }
+
+                 const targetPosition = new vscode.Position(originalTargetLineNumber, targetCharIndex);
+                 originalSelection = new vscode.Selection(targetPosition, targetPosition); // Zero-width selection at calculated position
+            } else {
+                // DRAG CASE (or fallback if originalCursorPosition wasn't passed): Select the entire found range.
+                originalSelection = new vscode.Selection(originalStartPosition, originalEndPosition);
+            }
+
+            // Define the range of the *found text* for highlighting purposes
+            const originalHighlightRange = new vscode.Range(
+                originalStartPosition,
+                originalEndPosition
+            );
+
+            // Show the original document and set the calculated selection (either zero-width or range)
             vscode.window.showTextDocument(originalDoc, {
-                selection: originalRange, // Select the found text
+                selection: originalSelection, // Use the determined selection
                 viewColumn: targetViewColumn ?? vscode.ViewColumn.Active,
                 preserveFocus: false,
                 preview: false
             }).then(editor => {
-                // Reveal the range
-                editor.revealRange(originalRange, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+                // Reveal the target position
+                editor.revealRange(originalSelection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 
-                // Apply temporary highlight if editor and decorationType are provided
+                // Apply temporary highlight to the found text range if editor and decorationType are provided
                 if (targetEditor && decorationType && editor.document.uri.toString() === targetEditor.document.uri.toString()) {
-                    targetEditor.setDecorations(decorationType, [originalRange]);
+                    targetEditor.setDecorations(decorationType, [originalHighlightRange]); // Highlight the found text
                     // Remove the highlight after a short delay
                     setTimeout(() => {
                         targetEditor.setDecorations(decorationType, []);
