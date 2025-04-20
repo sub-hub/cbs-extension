@@ -1,0 +1,4 @@
+# Exclude files for packaging
+format_examples
+src
+cbs_reference
