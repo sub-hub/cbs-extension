@@ -44,7 +44,7 @@
     "languages": [{
       "id": "cbs",
       "aliases": ["Curly Braced Syntax", "cbs"],
-      "extensions": [".cbs"],
+      "extensions": [".cbs", ".txt"],
       "configuration": "./language-configuration.json"
     }],
     "grammars": [{

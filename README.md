@@ -42,6 +42,20 @@ Provides comprehensive language support for Curly Braced Syntax (`.cbs`) files i
 2.  Open any file with the `.cbs` extension.
 3.  Utilize the features described above for an enhanced development workflow.
 
+## Note on `.txt` File Association
+
+By default, this extension associates both `.cbs` and `.txt` files with the CBS language features. If you prefer *not* to have CBS features applied to your plain `.txt` files, you can easily override this in your VS Code settings.
+
+Open your `settings.json` file (File > Preferences > Settings, then click the "Open Settings (JSON)" icon in the top right) and add the following configuration:
+
+```json
+"files.associations": {
+    "*.txt": "plaintext"
+}
+```
+
+This tells VS Code to treat `.txt` files as plain text, overriding the extension's default setting.
+
 ## Contributing
 
 Bug reports and feature requests are welcome! Please open an issue on the [GitHub repository](https://github.com/sub-hub/cbs-extension)
