@@ -677,7 +677,16 @@ export function activate(context: vscode.ExtensionContext) {
 
                         if (cmdInfo.parameters && cmdInfo.parameters.length > 0) {
                             // Check if it's a prefix command for the original command to use the correct separator
-                            const separator = cmdInfo.isPrefixCommand ? ':' : '::';
+                            let separator;
+                            if(cmdInfo.name === '?'){
+                                separator = ' ';
+                            }else{
+                                if(cmdInfo.isPrefixCommand){
+                                    separator = ':';
+                                }else{
+                                    separator = '::';
+                                }
+                            }
                             // Use the primary command name in the snippet, but the correct separator
                             aliasItem.insertText = new vscode.SnippetString(`{{${cmdInfo.name}${separator}$\{1\}}}`);
                         } else {
