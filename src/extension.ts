@@ -632,6 +632,8 @@ export function activate(context: vscode.ExtensionContext) {
 
             const insertRange = new vscode.Range(position, position); // Insert at the original cursor position
 
+            const useOriginalNameForAlias = vscode.workspace.getConfiguration('cbs').get<boolean>('completion.useOriginalNameForAlias', true);
+
             const commandCompletionItems: vscode.CompletionItem[] = [];
 
             cbsCommandsData.forEach(cmdInfo => {
@@ -675,23 +677,25 @@ export function activate(context: vscode.ExtensionContext) {
                         aliasItem.range = insertRange; // Use the original position for insertion range
                         aliasItem.additionalTextEdits = [deleteTriggerEdit]; // Always include the deletion edit
 
+                        // Determine the text to insert based on the setting
+                        const textToInsert = useOriginalNameForAlias ? cmdInfo.name : alias;
+
                         if (cmdInfo.parameters && cmdInfo.parameters.length > 0) {
-                            // Check if it's a prefix command for the original command to use the correct separator
                             let separator;
-                            if(cmdInfo.name === '?'){
+                            if (textToInsert === '?') {
                                 separator = ' ';
-                            }else{
-                                if(cmdInfo.isPrefixCommand){
+                            } else {
+                                // Use original command's prefix status
+                                // except for separator difference between original and alias
+                                if (cmdInfo.isPrefixCommand && textToInsert !== 'calc') {
                                     separator = ':';
-                                }else{
+                                } else {
                                     separator = '::';
                                 }
                             }
-                            // Use the primary command name in the snippet, but the correct separator
-                            aliasItem.insertText = new vscode.SnippetString(`{{${cmdInfo.name}${separator}$\{1\}}}`);
+                            aliasItem.insertText = new vscode.SnippetString(`{{${textToInsert}${separator}$\{1\}}}`);
                         } else {
-                            // Use the primary command name for consistency when no params
-                            aliasItem.insertText = `{{${cmdInfo.name}}}`;
+                            aliasItem.insertText = `{{${textToInsert}}}`;
                         }
                         if (cmdInfo.signatureLabel) {
                              aliasItem.detail = `Alias for {{${cmdInfo.signatureLabel}}}`;

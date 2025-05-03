@@ -126,6 +126,11 @@
                 "type": "number",
                 "default": 0,
                 "description": "Delay in milliseconds before updating the preview after a change (debounce). Higher values reduce lag during typing."
+            },
+            "cbs.completion.useOriginalNameForAlias": {
+                "type": "boolean",
+                "default": true,
+                "description": "If true, completing an alias will insert the original command name. If false, it will insert the alias itself."
             }
         }
     },
