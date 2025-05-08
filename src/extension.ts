@@ -609,16 +609,19 @@ export function activate(context: vscode.ExtensionContext) {
                 return undefined;
             }
             let isValidTrigger = false;
-            // ... (rest of completion logic)
+            let triggerChar = ''; // Variable to store the actual trigger character
+
             // Check for TriggerCharacter
-            if (context.triggerKind === vscode.CompletionTriggerKind.TriggerCharacter && ['[', '{'].includes(context.triggerCharacter ?? '')) {
+            if (context.triggerKind === vscode.CompletionTriggerKind.TriggerCharacter && ['[', '{', '<'].includes(context.triggerCharacter ?? '')) {
                 isValidTrigger = true;
+                triggerChar = context.triggerCharacter ?? '';
             }
-            // Check for Invoke after '[' or '{'
+            // Check for Invoke after '[' or '{' or '<'
             else if (context.triggerKind === vscode.CompletionTriggerKind.Invoke && position.character > 0) {
                 const charBefore = document.getText(new vscode.Range(position.translate(0, -1), position));
-                if (['[', '{'].includes(charBefore)) {
+                if (['[', '{', '<'].includes(charBefore)) {
                     isValidTrigger = true;
+                    triggerChar = charBefore;
                 }
             }
 
@@ -629,89 +632,136 @@ export function activate(context: vscode.ExtensionContext) {
             // If the trigger is valid, we always want to delete the preceding character
             const deleteRange = new vscode.Range(position.translate(0, -1), position);
             const deleteTriggerEdit = vscode.TextEdit.delete(deleteRange);
-
             const insertRange = new vscode.Range(position, position); // Insert at the original cursor position
 
-            const useOriginalNameForAlias = vscode.workspace.getConfiguration('cbs').get<boolean>('completion.useOriginalNameForAlias', true);
+            // Handle ChatML completion for '<'
+            if (triggerChar === '<') {
+                const chatMLItems: vscode.CompletionItem[] = [];
 
-            const commandCompletionItems: vscode.CompletionItem[] = [];
+                // System Block
+                const systemBlock = new vscode.CompletionItem('ChatML system block', vscode.CompletionItemKind.Snippet);
+                systemBlock.insertText = new vscode.SnippetString('<|im_start|>system\n$0\n<|im_end|>');
+                systemBlock.documentation = new vscode.MarkdownString('Inserts a ChatML system message block.');
+                systemBlock.range = insertRange;
+                systemBlock.additionalTextEdits = [deleteTriggerEdit];
+                systemBlock.detail = "ChatML System Snippet";
+                systemBlock.sortText = "chatml_1system";
+                chatMLItems.push(systemBlock);
 
-            cbsCommandsData.forEach(cmdInfo => {
-                const item = new vscode.CompletionItem(cmdInfo.name, vscode.CompletionItemKind.Keyword);
-                item.documentation = new vscode.MarkdownString(typeof cmdInfo.description === 'string' ? cmdInfo.description : cmdInfo.description.value);
+                // User Block
+                const userBlock = new vscode.CompletionItem('ChatML user block', vscode.CompletionItemKind.Snippet);
+                userBlock.insertText = new vscode.SnippetString('<|im_start|>user\n$0\n<|im_end|>');
+                userBlock.documentation = new vscode.MarkdownString('Inserts a ChatML user message block.');
+                userBlock.range = insertRange;
+                userBlock.additionalTextEdits = [deleteTriggerEdit];
+                userBlock.detail = "ChatML User Snippet";
+                userBlock.sortText = "chatml_2user";
+                chatMLItems.push(userBlock);
 
-                item.range = insertRange; // Use the original position for insertion range
-                item.additionalTextEdits = [deleteTriggerEdit]; // Always include the deletion edit
+                // Assistant Block
+                const assistantBlock = new vscode.CompletionItem('ChatML assistant block', vscode.CompletionItemKind.Snippet);
+                assistantBlock.insertText = new vscode.SnippetString('<|im_start|>assistant\n$0\n<|im_end|>');
+                assistantBlock.documentation = new vscode.MarkdownString('Inserts a ChatML assistant message block.');
+                assistantBlock.range = insertRange;
+                assistantBlock.additionalTextEdits = [deleteTriggerEdit];
+                assistantBlock.detail = "ChatML Assistant Snippet";
+                assistantBlock.sortText = "chatml_3assistant";
+                chatMLItems.push(assistantBlock);
 
-                if (cmdInfo.parameters && cmdInfo.parameters.length > 0) {
-                    // Make sure to use the correct separator for prefix commands
-                    let separator;
-                    if(cmdInfo.name === '?'){
-                        separator = ' ';
-                    }else{
-                        if(cmdInfo.isPrefixCommand){
-                            separator = ':';
+                // End Tag
+                const endTag = new vscode.CompletionItem('ChatML end tag', vscode.CompletionItemKind.Snippet);
+                endTag.insertText = new vscode.SnippetString('<|im_end|>');
+                endTag.documentation = new vscode.MarkdownString('Inserts the ChatML end tag.');
+                endTag.range = insertRange;
+                endTag.additionalTextEdits = [deleteTriggerEdit];
+                endTag.detail = "ChatML End Tag Snippet";
+                endTag.sortText = "chatml_4end_tag";
+                chatMLItems.push(endTag);
+
+                return chatMLItems;
+            }
+            // Handle existing CBS command completions for '[' or '{'
+            else if (triggerChar === '[' || triggerChar === '{') {
+                const useOriginalNameForAlias = vscode.workspace.getConfiguration('cbs').get<boolean>('completion.useOriginalNameForAlias', true);
+                const commandCompletionItems: vscode.CompletionItem[] = [];
+
+                cbsCommandsData.forEach(cmdInfo => {
+                    const item = new vscode.CompletionItem(cmdInfo.name, vscode.CompletionItemKind.Keyword);
+                    item.documentation = new vscode.MarkdownString(typeof cmdInfo.description === 'string' ? cmdInfo.description : cmdInfo.description.value);
+
+                    item.range = insertRange; // Use the original position for insertion range
+                    item.additionalTextEdits = [deleteTriggerEdit]; // Always include the deletion edit
+
+                    if (cmdInfo.parameters && cmdInfo.parameters.length > 0) {
+                        // Make sure to use the correct separator for prefix commands
+                        let separator;
+                        if(cmdInfo.name === '?'){
+                            separator = ' ';
                         }else{
-                            separator = '::';
-                        }
-                    }
-                    item.insertText = new vscode.SnippetString(`{{${cmdInfo.name}${separator}$\{1\}}}`);
-                } else {
-                    item.insertText = `{{${cmdInfo.name}}}`;
-                }
-
-                if (cmdInfo.signatureLabel) {
-                    item.detail = `{{${cmdInfo.signatureLabel}}}`;
-                } else {
-                    item.detail = `CBS Command`;
-                }
-
-                item.sortText = cmdInfo.name;
-
-                commandCompletionItems.push(item);
-
-                if (cmdInfo.aliases) {
-                    cmdInfo.aliases.forEach(alias => {
-                        const aliasItem = new vscode.CompletionItem(alias, vscode.CompletionItemKind.Keyword);
-                        aliasItem.documentation = new vscode.MarkdownString(`Alias for {{${cmdInfo.name}}}\n\n${typeof cmdInfo.description === 'string' ? cmdInfo.description : cmdInfo.description.value}`);
-                        aliasItem.range = insertRange; // Use the original position for insertion range
-                        aliasItem.additionalTextEdits = [deleteTriggerEdit]; // Always include the deletion edit
-
-                        // Determine the text to insert based on the setting
-                        const textToInsert = useOriginalNameForAlias ? cmdInfo.name : alias;
-
-                        if (cmdInfo.parameters && cmdInfo.parameters.length > 0) {
-                            let separator;
-                            if (textToInsert === '?') {
-                                separator = ' ';
-                            } else {
-                                // Use original command's prefix status
-                                // except for separator difference between original and alias
-                                if (cmdInfo.isPrefixCommand && textToInsert !== 'calc') {
-                                    separator = ':';
-                                } else {
-                                    separator = '::';
-                                }
+                            if(cmdInfo.isPrefixCommand){
+                                separator = ':';
+                            }else{
+                                separator = '::';
                             }
-                            aliasItem.insertText = new vscode.SnippetString(`{{${textToInsert}${separator}$\{1\}}}`);
-                        } else {
-                            aliasItem.insertText = `{{${textToInsert}}}`;
                         }
-                        if (cmdInfo.signatureLabel) {
-                             aliasItem.detail = `Alias for {{${cmdInfo.signatureLabel}}}`;
-                        } else {
-                             aliasItem.detail = `Alias for ${cmdInfo.name}`;
-                        }
-                        aliasItem.sortText = alias;
-                        commandCompletionItems.push(aliasItem);
-                    });
-                }
-            });
+                        item.insertText = new vscode.SnippetString(`{{${cmdInfo.name}${separator}$\{1\}}}`);
+                    } else {
+                        item.insertText = `{{${cmdInfo.name}}}`;
+                    }
 
-            return commandCompletionItems;
+                    if (cmdInfo.signatureLabel) {
+                        item.detail = `{{${cmdInfo.signatureLabel}}}`;
+                    } else {
+                        item.detail = `CBS Command`;
+                    }
+
+                    item.sortText = cmdInfo.name;
+                    commandCompletionItems.push(item);
+
+                    if (cmdInfo.aliases) {
+                        cmdInfo.aliases.forEach(alias => {
+                            const aliasItem = new vscode.CompletionItem(alias, vscode.CompletionItemKind.Keyword);
+                            aliasItem.documentation = new vscode.MarkdownString(`Alias for {{${cmdInfo.name}}}\n\n${typeof cmdInfo.description === 'string' ? cmdInfo.description : cmdInfo.description.value}`);
+                            aliasItem.range = insertRange; // Use the original position for insertion range
+                            aliasItem.additionalTextEdits = [deleteTriggerEdit]; // Always include the deletion edit
+
+                            // Determine the text to insert based on the setting
+                            const textToInsert = useOriginalNameForAlias ? cmdInfo.name : alias;
+
+                            if (cmdInfo.parameters && cmdInfo.parameters.length > 0) {
+                                let separator;
+                                if (textToInsert === '?') {
+                                    separator = ' ';
+                                } else {
+                                    // Use original command's prefix status
+                                    // except for separator difference between original and alias
+                                    if (cmdInfo.isPrefixCommand && textToInsert !== 'calc') {
+                                        separator = ':';
+                                    } else {
+                                        separator = '::';
+                                    }
+                                }
+                                aliasItem.insertText = new vscode.SnippetString(`{{${textToInsert}${separator}$\{1\}}}`);
+                            } else {
+                                aliasItem.insertText = `{{${textToInsert}}}`;
+                            }
+                            if (cmdInfo.signatureLabel) {
+                                 aliasItem.detail = `Alias for {{${cmdInfo.signatureLabel}}}`;
+                            } else {
+                                 aliasItem.detail = `Alias for ${cmdInfo.name}`;
+                            }
+                            aliasItem.sortText = alias;
+                            commandCompletionItems.push(aliasItem);
+                        });
+                    }
+                });
+                return commandCompletionItems;
+            }
+            // Fallback if triggerChar is somehow not one of the expected ones after isValidTrigger
+            return undefined;
         }
     },
-    '[', '{'
+    '[', '{', '<'
   );
 
   // --- Document Formatting Provider (Full Document) ---
