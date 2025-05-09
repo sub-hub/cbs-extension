@@ -242,108 +242,134 @@ export class CbsLinter {
         tagContentWithBraces: string,
         document: vscode.TextDocument,
         rangeForThisTag: vscode.Range,
-        parentDocumentOffsetForTag: number, // Offset of tagContentWithBraces from the start of the document
-        currentDepth: number = 0 // Added for recursion depth tracking
+        parentDocumentOffsetForTag: number,
+        currentDepth: number = 0
     ): vscode.Diagnostic[] {
         const diagnostics: vscode.Diagnostic[] = [];
+        const MAX_RECURSION_DEPTH = 10;
 
-        const MAX_RECURSION_DEPTH = 10; // Define a max depth
         if (currentDepth > MAX_RECURSION_DEPTH) {
             diagnostics.push(new vscode.Diagnostic(rangeForThisTag, `Excessive tag nesting depth (${currentDepth}). Linting stopped for this branch.`, vscode.DiagnosticSeverity.Warning));
-            return diagnostics; // Stop linting this branch
+            return diagnostics;
         }
 
         const tagContent = tagContentWithBraces.slice(2, -2).trim();
 
-        if (!tagContent || tagContent.startsWith('/') || tagContent.startsWith('#') || tagContent.startsWith('?')) {
-            return diagnostics; // Skip blocks, end tags, calc, empty tags
+        if (!tagContent || tagContent.startsWith('/') || tagContent.startsWith('?')) {
+            return diagnostics; // Skip empty, end tags, and calc/question mark tags from this level of command processing
         }
 
-        let commandName = tagContent;
-        let paramsString = "";
-        const firstSeparatorIndex = this.findTopLevelSeparator(tagContent, '::');
+        let commandName: string;
+        let paramsString: string = ""; // Raw string of all parameters
+        let paramsArray: string[];    // Parameters split, maintaining original spacing from paramsString
+        let isBlockTag = false;
 
-        if (firstSeparatorIndex !== -1) {
-            commandName = tagContent.substring(0, firstSeparatorIndex);
-            paramsString = tagContent.substring(firstSeparatorIndex + 2);
-        }
-
-        const paramsArray = this.splitCbsParamsSmart(paramsString);
-        const numParamsProvided = paramsArray.length;
-
-        const commandInfos = findAllCommandInfo(commandName);
-
-        if (commandInfos.length === 0) {
-            if (!['setvar', 'settempvar', 'getvar', 'gettempvar', 'getglobalvar', '?', 'calc'].includes(commandName)) {
-                diagnostics.push(new vscode.Diagnostic(rangeForThisTag, `Unknown command '${commandName}'.`, vscode.DiagnosticSeverity.Error));
+        if (tagContent.startsWith('#')) {
+            isBlockTag = true;
+            const firstSpaceIdx = tagContent.indexOf(' ');
+            if (firstSpaceIdx !== -1) {
+                commandName = tagContent.substring(0, firstSpaceIdx);
+                paramsString = tagContent.substring(firstSpaceIdx + 1); // Retain original spacing for offset calculations
+            } else { // Block tag with no parameters (e.g., {{#pure}})
+                commandName = tagContent;
+                paramsString = "";
             }
-            // Even if command is unknown, its parameters might be valid tags that need linting
-        } else {
-            let isValidUsage = false;
-            for (const commandInfo of commandInfos) {
-                const requiredParams = commandInfo.parameters?.filter(p => !p.label.includes('optional') && !p.label.startsWith('[') && !p.label.endsWith('?]')).length ?? 0;
-                const totalExpectedParams = commandInfo.parameters?.length ?? 0;
-                const allowsVariableParams = commandInfo.signatureLabel.includes('...');
-
-                if (allowsVariableParams) {
-                    if (numParamsProvided >= requiredParams) {
-                        isValidUsage = true;
-                        break;
-                    }
-                } else { // Fixed number of parameters
-                    // Valid if numParamsProvided is between required and total (inclusive)
-                    // This handles optional parameters correctly.
-                    if (numParamsProvided >= requiredParams && numParamsProvided <= totalExpectedParams) {
-                        isValidUsage = true;
-                        break;
-                    }
-                }
+            paramsArray = this.splitCbsParamsSmart(paramsString);
+        } else { // Regular command
+            isBlockTag = false;
+            const separatorIdxInTagContent = this.findTopLevelSeparator(tagContent, '::');
+            if (separatorIdxInTagContent !== -1) {
+                commandName = tagContent.substring(0, separatorIdxInTagContent);
+                paramsString = tagContent.substring(separatorIdxInTagContent + 2);
+            } else {
+                commandName = tagContent;
+                paramsString = "";
             }
-            if (!isValidUsage) {
-                const possibleSignatures = commandInfos.map(ci => `{{${ci.signatureLabel}}}`).join(' or ');
-                diagnostics.push(new vscode.Diagnostic(
-                    rangeForThisTag,
-                    `Incorrect parameter count for command '${commandName}'. Provided ${numParamsProvided} parameter(s). Valid signature(s): ${possibleSignatures}`,
-                    vscode.DiagnosticSeverity.Error
-                ));
-            }
-        }
-
-        // Recursive call for parameters that are themselves tags
-        // parentDocumentOffsetForTag is the offset of `tagContentWithBraces` from the start of the document.
-
-        // Calculate the starting offset of paramsString within tagContentWithBraces
-        const tagContentStartOffsetInFullTag = tagContentWithBraces.indexOf(tagContent); 
-        let paramsStringActualStartOffsetInFullTag = tagContentStartOffsetInFullTag + tagContent.length; // Default if no params (paramsString is empty)
-        if (firstSeparatorIndex !== -1) { // If '::' was found in tagContent, paramsString starts after it
-            paramsStringActualStartOffsetInFullTag = tagContentStartOffsetInFullTag + firstSeparatorIndex + 2;
+            paramsArray = this.splitCbsParamsSmart(paramsString);
         }
         
-        let currentParamRelativeOffset = 0; // Tracks offset *within paramsString*
+        const numParamsProvided = paramsArray.length;
 
-        for (let i = 0; i < paramsArray.length; i++) {
-            const paramStr = paramsArray[i];
-            // paramStartOffsetInParamsString is the offset of the current paramStr relative to the start of paramsString
-            const paramStartOffsetInParamsString = currentParamRelativeOffset;
+        // Validate command and parameter count for non-block tags
+        if (!isBlockTag) {
+            const commandInfos = findAllCommandInfo(commandName);
+            if (commandInfos.length === 0) {
+                // Allow known variable manipulation commands even if not in cbsCommandsData explicitly for this check
+                if (!['setvar', 'settempvar', 'getvar', 'gettempvar', 'getglobalvar'].includes(commandName)) {
+                    diagnostics.push(new vscode.Diagnostic(rangeForThisTag, `Unknown command '${commandName}'.`, vscode.DiagnosticSeverity.Error));
+                }
+            } else {
+                let isValidUsage = false;
+                for (const commandInfo of commandInfos) {
+                    const requiredParams = commandInfo.parameters?.filter(p => !p.label.includes('optional') && !p.label.startsWith('[') && !p.label.endsWith('?]')).length ?? 0;
+                    const totalExpectedParams = commandInfo.parameters?.length ?? 0;
+                    const allowsVariableParams = commandInfo.signatureLabel.includes('...');
 
-            if (paramStr.startsWith('{{') && paramStr.endsWith('}}')) {
-                const paramContentForRecurse = paramStr.slice(2, -2).trim();
-                if (paramContentForRecurse) { // Avoid linting empty {{}}
-                    // absoluteStartOffsetOfParamStr is from the beginning of the document
-                    const absoluteStartOffsetOfParamStr = parentDocumentOffsetForTag + paramsStringActualStartOffsetInFullTag + paramStartOffsetInParamsString;
-                    
-                    const paramRange = new vscode.Range(
-                        document.positionAt(absoluteStartOffsetOfParamStr),
-                        document.positionAt(absoluteStartOffsetOfParamStr + paramStr.length)
-                    );
-                    diagnostics.push(...this.lintRecursive(paramStr, document, paramRange, absoluteStartOffsetOfParamStr, currentDepth + 1));
+                    if (allowsVariableParams) {
+                        if (numParamsProvided >= requiredParams) {
+                            isValidUsage = true;
+                            break;
+                        }
+                    } else { 
+                        if (numParamsProvided >= requiredParams && numParamsProvided <= totalExpectedParams) {
+                            isValidUsage = true;
+                            break;
+                        }
+                    }
+                }
+                if (!isValidUsage) {
+                    const possibleSignatures = commandInfos.map(ci => `{{${ci.signatureLabel}}}`).join(' or ');
+                    diagnostics.push(new vscode.Diagnostic(
+                        rangeForThisTag,
+                        `Incorrect parameter count for command '${commandName}'. Provided ${numParamsProvided} parameter(s). Valid signature(s): ${possibleSignatures}`,
+                        vscode.DiagnosticSeverity.Error
+                    ));
                 }
             }
-            // Advance offset for the next parameter
-            currentParamRelativeOffset += paramStr.length;
-            if (i < paramsArray.length - 1) { // If not the last param, skip '::'
-                currentParamRelativeOffset += 2; // Length of "::"
+        }
+
+        // Calculate the offset of where paramsString begins within tagContentWithBraces
+        const tagContentStartOffsetInFullTag = tagContentWithBraces.indexOf(tagContent); // e.g. 2 for {{tagContent}}
+        let paramsStringActualStartOffsetInFullTag = tagContentStartOffsetInFullTag + tagContent.length; // Default to end if no paramsString
+
+        if (paramsString) {
+            const offsetOfParamsInTagContent = tagContent.indexOf(paramsString);
+            if (offsetOfParamsInTagContent !== -1) {
+                 paramsStringActualStartOffsetInFullTag = tagContentStartOffsetInFullTag + offsetOfParamsInTagContent;
             }
+        }
+        
+        // Iterate through parameters for recursive linting
+        let currentSearchOffsetInParamsString = 0; // Tracks search position within paramsString
+
+        for (let i = 0; i < paramsArray.length; i++) {
+            const paramStrUntrimmed = paramsArray[i]; // Parameter as returned by splitCbsParamsSmart (may have spaces)
+            
+            const paramActualStartInParamsString = paramsString.indexOf(paramStrUntrimmed, currentSearchOffsetInParamsString);
+            if (paramActualStartInParamsString === -1) {
+                // This indicates a mismatch between paramsArray and paramsString, should not happen.
+                // Consider logging an internal error or skipping this parameter.
+                break; 
+            }
+
+            const paramToRecurseOn = paramStrUntrimmed.trim(); // Trim for {{...}} check and for content extraction
+
+            if (paramToRecurseOn.startsWith('{{') && paramToRecurseOn.endsWith('}}')) {
+                const paramContentForRecurse = paramToRecurseOn.slice(2, -2).trim(); // Content inside {{...}}
+                if (paramContentForRecurse) { // Avoid linting empty {{}}
+                    // Calculate absolute document offset for this parameter tag
+                    const absoluteStartOffsetOfParam = parentDocumentOffsetForTag + paramsStringActualStartOffsetInFullTag + paramActualStartInParamsString;
+                    
+                    const paramRange = new vscode.Range(
+                        document.positionAt(absoluteStartOffsetOfParam),
+                        // Use untrimmed length for the range to cover original spacing
+                        document.positionAt(absoluteStartOffsetOfParam + paramStrUntrimmed.length) 
+                    );
+                    diagnostics.push(...this.lintRecursive(paramToRecurseOn, document, paramRange, absoluteStartOffsetOfParam, currentDepth + 1));
+                }
+            }
+            // Advance search offset for the next parameter within paramsString
+            currentSearchOffsetInParamsString = paramActualStartInParamsString + paramStrUntrimmed.length;
         }
         return diagnostics;
     }
