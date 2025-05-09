@@ -17,7 +17,6 @@ const varReferenceDollarRegex = /\{\{(?:\?|calc)::.*?\$([a-zA-Z0-9_]+).*?\}\}/gi
 const blockStartRegex = /\{\{#([\w-]+)/;
 const pureBlockStartRegex = /\{\{#(if-pure|pure_display)/; // Add other pure blocks if needed
 const blockEndRegex = /\{\{\/(?:[\w-]+)?\}\}|\{\{\/\}\}/; // Matches {{/command}} or {{/}}
-const tagRegex = /\{\{(?:[^{}]|\{\{[^{}]*?\}\})*?\}\}/g; // General regex to find tags, handles one level of nesting in parameters
 
 /**
  * Manages CBS language diagnostics and linting logic.
@@ -377,20 +376,37 @@ export class CbsLinter {
     private checkCommandUsage(document: vscode.TextDocument): vscode.Diagnostic[] {
         const allDiagnostics: vscode.Diagnostic[] = [];
         const text = document.getText();
-        let match;
+        let braceLevel = 0;
+        let currentTagStartIndex = -1;
 
-        tagRegex.lastIndex = 0;
-        while ((match = tagRegex.exec(text)) !== null) {
-            const tagContentWithBraces = match[0];
-            const tagStartIndex = match.index; // Offset of this tag from the start of the document
+        for (let i = 0; i < text.length - 1; i++) {
+            if (text.substring(i, i + 2) === '{{') {
+                if (braceLevel === 0) {
+                    currentTagStartIndex = i;
+                }
+                braceLevel++;
+                i++; // Move past the second '{'
+            } else if (text.substring(i, i + 2) === '}}') {
+                if (braceLevel > 0) { // Only decrement if we are inside a tag
+                    braceLevel--;
+                    if (braceLevel === 0 && currentTagStartIndex !== -1) {
+                        // Found a complete top-level tag
+                        const tagContentWithBraces = text.substring(currentTagStartIndex, i + 2);
+                        const startPos = document.positionAt(currentTagStartIndex);
+                        const endPos = document.positionAt(i + 2);
+                        const range = new vscode.Range(startPos, endPos);
 
-            const startPos = document.positionAt(tagStartIndex);
-            const endPos = document.positionAt(tagStartIndex + tagContentWithBraces.length);
-            const range = new vscode.Range(startPos, endPos);
-
-            // Initial call to lintRecursive starts with depth 0
-            allDiagnostics.push(...this.lintRecursive(tagContentWithBraces, document, range, tagStartIndex, 0));
+                        // Initial call to lintRecursive starts with depth 0
+                        allDiagnostics.push(...this.lintRecursive(tagContentWithBraces, document, range, currentTagStartIndex, 0));
+                        currentTagStartIndex = -1; // Reset for the next top-level tag
+                    }
+                }
+                // If braceLevel is 0 here, it's an unmatched '}}', checkGeneralSyntax handles this.
+                i++; // Move past the second '}'
+            }
         }
+        // Unclosed tags at the end of the file are handled by checkGeneralSyntax (for '{{')
+        // and checkBlockMismatch (for '{{#blockName}').
         return allDiagnostics;
     }
 
