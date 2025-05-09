@@ -196,91 +196,176 @@ export class CbsLinter {
      * @param document The document to check.
      * @returns An array of diagnostics for command usage errors.
      */
-    private checkCommandUsage(document: vscode.TextDocument): vscode.Diagnostic[] {
+    // Helper to find the first top-level occurrence of a separator (e.g., '::')
+    private findTopLevelSeparator(text: string, separator: string): number {
+        let braceLevel = 0;
+        for (let i = 0; i <= text.length - separator.length; i++) {
+            if (text.substring(i, i + 2) === '{{') {
+                braceLevel++;
+                i++; // consume '{{'
+            } else if (text.substring(i, i + 2) === '}}') {
+                braceLevel--;
+                i++; // consume '}}'
+            } else if (braceLevel === 0 && text.substring(i, i + separator.length) === separator) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // Helper to split parameters string respecting nested braces for '::'
+    private splitCbsParamsSmart(paramString: string): string[] {
+        const params: string[] = [];
+        if (!paramString.trim()) return params;
+
+        let currentParamStartIndex = 0;
+        let braceLevel = 0;
+        for (let i = 0; i < paramString.length; i++) {
+            if (paramString.substring(i, i + 2) === '{{') {
+                braceLevel++;
+                i++; 
+            } else if (paramString.substring(i, i + 2) === '}}') {
+                braceLevel--;
+                i++; 
+            } else if (paramString.substring(i, i + 2) === '::' && braceLevel === 0) {
+                params.push(paramString.substring(currentParamStartIndex, i));
+                currentParamStartIndex = i + 2; // Move past '::'
+                i++; 
+            }
+        }
+        params.push(paramString.substring(currentParamStartIndex)); // Add the last parameter
+        return params;
+    }
+    
+
+    private lintRecursive(
+        tagContentWithBraces: string,
+        document: vscode.TextDocument,
+        rangeForThisTag: vscode.Range,
+        parentDocumentOffsetForTag: number, // Offset of tagContentWithBraces from the start of the document
+        currentDepth: number = 0 // Added for recursion depth tracking
+    ): vscode.Diagnostic[] {
         const diagnostics: vscode.Diagnostic[] = [];
-        const text = document.getText();
-        let match;
 
-        // Iterate through all potential tags
-        tagRegex.lastIndex = 0; // Reset regex state
-        while ((match = tagRegex.exec(text)) !== null) {
-            const tagContentWithBraces = match[0];
-            // Basic check for malformed tags (e.g., {{ command : param }}) - could be improved
-            if (tagContentWithBraces.includes(' : ') || !tagContentWithBraces.endsWith('}}') || !tagContentWithBraces.startsWith('{{')) {
-                 // This might be caught by checkGeneralSyntax, but added here for robustness
-                 continue;
+        const MAX_RECURSION_DEPTH = 10; // Define a max depth
+        if (currentDepth > MAX_RECURSION_DEPTH) {
+            diagnostics.push(new vscode.Diagnostic(rangeForThisTag, `Excessive tag nesting depth (${currentDepth}). Linting stopped for this branch.`, vscode.DiagnosticSeverity.Warning));
+            return diagnostics; // Stop linting this branch
+        }
+
+        const tagContent = tagContentWithBraces.slice(2, -2).trim();
+
+        if (!tagContent || tagContent.startsWith('/') || tagContent.startsWith('#') || tagContent.startsWith('?')) {
+            return diagnostics; // Skip blocks, end tags, calc, empty tags
+        }
+
+        let commandName = tagContent;
+        let paramsString = "";
+        const firstSeparatorIndex = this.findTopLevelSeparator(tagContent, '::');
+
+        if (firstSeparatorIndex !== -1) {
+            commandName = tagContent.substring(0, firstSeparatorIndex);
+            paramsString = tagContent.substring(firstSeparatorIndex + 2);
+        }
+
+        const paramsArray = this.splitCbsParamsSmart(paramsString);
+        const numParamsProvided = paramsArray.length;
+
+        const commandInfos = findAllCommandInfo(commandName);
+
+        if (commandInfos.length === 0) {
+            if (!['setvar', 'settempvar', 'getvar', 'gettempvar', 'getglobalvar', '?', 'calc'].includes(commandName)) {
+                diagnostics.push(new vscode.Diagnostic(rangeForThisTag, `Unknown command '${commandName}'.`, vscode.DiagnosticSeverity.Error));
             }
-
-            const tagContent = tagContentWithBraces.slice(2, -2).trim(); // Remove {{ and }} and trim
-            if (!tagContent || tagContent.startsWith('/') || tagContent.startsWith('#')) {
-                // Skip block start/end tags (handled by checkBlockMismatch) and empty tags {{}}
-                continue;
-            }
-
-            // Skip command name and parameter count linting for {{? ... }} tags
-            if (tagContent.startsWith('?')) {
-                continue;
-            }
-
-            const parts = tagContent.split('::');
-            const commandName = parts[0];
-            const params = parts.slice(1);
-            const numParamsProvided = params.length;
-
-            // Use findAllCommandInfo to get all possible signatures
-            const commandInfos = findAllCommandInfo(commandName);
-
-            const tagStartIndex = match.index;
-            const startPos = document.positionAt(tagStartIndex);
-            const endPos = document.positionAt(tagStartIndex + tagContentWithBraces.length);
-            const range = new vscode.Range(startPos, endPos);
-
-            if (commandInfos.length === 0) {
-                // Allow known variable commands explicitly
-                if (!['setvar', 'settempvar', 'getvar', 'gettempvar', 'getglobalvar', '?', 'calc'].includes(commandName)) {
-                    diagnostics.push(new vscode.Diagnostic(
-                        range,
-                        `Unknown command '${commandName}'.`,
-                        vscode.DiagnosticSeverity.Error
-                    ));
-                }
-                continue; // Skip further checks if command is unknown (or a variable command)
-            }
-
-            // Check if the provided parameter count matches *any* of the valid signatures
+            // Even if command is unknown, its parameters might be valid tags that need linting
+        } else {
             let isValidUsage = false;
             for (const commandInfo of commandInfos) {
                 const requiredParams = commandInfo.parameters?.filter(p => !p.label.includes('optional') && !p.label.startsWith('[') && !p.label.endsWith('?]')).length ?? 0;
-                const allowsVariableParams = commandInfo.signatureLabel.includes('...'); // Simple check for variable args
+                const totalExpectedParams = commandInfo.parameters?.length ?? 0;
+                const allowsVariableParams = commandInfo.signatureLabel.includes('...');
 
-                // Check if the number of parameters is valid for *this* signature
                 if (allowsVariableParams) {
-                    // If variable params are allowed, we only need to check the minimum required
                     if (numParamsProvided >= requiredParams) {
                         isValidUsage = true;
-                        break; // Found a valid signature
+                        break;
                     }
-                } else {
-                    // Check for fixed-parameter signatures, the number of provided parameters meets the minimum required count
-                    if (numParamsProvided >= requiredParams) {
+                } else { // Fixed number of parameters
+                    // Valid if numParamsProvided is between required and total (inclusive)
+                    // This handles optional parameters correctly.
+                    if (numParamsProvided >= requiredParams && numParamsProvided <= totalExpectedParams) {
                         isValidUsage = true;
-                        break; // Found a valid signature
+                        break;
                     }
                 }
             }
-
-            // If no valid signature matched the parameter count
             if (!isValidUsage) {
                 const possibleSignatures = commandInfos.map(ci => `{{${ci.signatureLabel}}}`).join(' or ');
                 diagnostics.push(new vscode.Diagnostic(
-                    range,
+                    rangeForThisTag,
                     `Incorrect parameter count for command '${commandName}'. Provided ${numParamsProvided} parameter(s). Valid signature(s): ${possibleSignatures}`,
                     vscode.DiagnosticSeverity.Error
                 ));
             }
         }
 
+        // Recursive call for parameters that are themselves tags
+        // parentDocumentOffsetForTag is the offset of `tagContentWithBraces` from the start of the document.
+
+        // Calculate the starting offset of paramsString within tagContentWithBraces
+        const tagContentStartOffsetInFullTag = tagContentWithBraces.indexOf(tagContent); 
+        let paramsStringActualStartOffsetInFullTag = tagContentStartOffsetInFullTag + tagContent.length; // Default if no params (paramsString is empty)
+        if (firstSeparatorIndex !== -1) { // If '::' was found in tagContent, paramsString starts after it
+            paramsStringActualStartOffsetInFullTag = tagContentStartOffsetInFullTag + firstSeparatorIndex + 2;
+        }
+        
+        let currentParamRelativeOffset = 0; // Tracks offset *within paramsString*
+
+        for (let i = 0; i < paramsArray.length; i++) {
+            const paramStr = paramsArray[i];
+            // paramStartOffsetInParamsString is the offset of the current paramStr relative to the start of paramsString
+            const paramStartOffsetInParamsString = currentParamRelativeOffset;
+
+            if (paramStr.startsWith('{{') && paramStr.endsWith('}}')) {
+                const paramContentForRecurse = paramStr.slice(2, -2).trim();
+                if (paramContentForRecurse) { // Avoid linting empty {{}}
+                    // absoluteStartOffsetOfParamStr is from the beginning of the document
+                    const absoluteStartOffsetOfParamStr = parentDocumentOffsetForTag + paramsStringActualStartOffsetInFullTag + paramStartOffsetInParamsString;
+                    
+                    const paramRange = new vscode.Range(
+                        document.positionAt(absoluteStartOffsetOfParamStr),
+                        document.positionAt(absoluteStartOffsetOfParamStr + paramStr.length)
+                    );
+                    diagnostics.push(...this.lintRecursive(paramStr, document, paramRange, absoluteStartOffsetOfParamStr, currentDepth + 1));
+                }
+            }
+            // Advance offset for the next parameter
+            currentParamRelativeOffset += paramStr.length;
+            if (i < paramsArray.length - 1) { // If not the last param, skip '::'
+                currentParamRelativeOffset += 2; // Length of "::"
+            }
+        }
         return diagnostics;
+    }
+
+    private checkCommandUsage(document: vscode.TextDocument): vscode.Diagnostic[] {
+        const allDiagnostics: vscode.Diagnostic[] = [];
+        const text = document.getText();
+        let match;
+
+        tagRegex.lastIndex = 0;
+        while ((match = tagRegex.exec(text)) !== null) {
+            const tagContentWithBraces = match[0];
+            const tagStartIndex = match.index; // Offset of this tag from the start of the document
+
+            const startPos = document.positionAt(tagStartIndex);
+            const endPos = document.positionAt(tagStartIndex + tagContentWithBraces.length);
+            const range = new vscode.Range(startPos, endPos);
+
+            // Initial call to lintRecursive starts with depth 0
+            allDiagnostics.push(...this.lintRecursive(tagContentWithBraces, document, range, tagStartIndex, 0));
+        }
+        return allDiagnostics;
     }
 
     /**
