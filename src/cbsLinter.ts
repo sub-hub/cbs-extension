@@ -17,7 +17,7 @@ const varReferenceDollarRegex = /\{\{(?:\?|calc)::.*?\$([a-zA-Z0-9_]+).*?\}\}/gi
 const blockStartRegex = /\{\{#([\w-]+)/;
 const pureBlockStartRegex = /\{\{#(if-pure|pure_display)/; // Add other pure blocks if needed
 const blockEndRegex = /\{\{\/(?:[\w-]+)?\}\}|\{\{\/\}\}/; // Matches {{/command}} or {{/}}
-const tagRegex = /\{\{.*?\}\}/g; // General regex to find tags
+const tagRegex = /\{\{(?:[^{}]|\{\{[^{}]*?\}\})*?\}\}/g; // General regex to find tags, handles one level of nesting in parameters
 
 /**
  * Manages CBS language diagnostics and linting logic.
