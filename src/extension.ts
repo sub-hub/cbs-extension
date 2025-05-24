@@ -14,6 +14,7 @@ const foundRangeDecorationType = vscode.window.createTextEditorDecorationType({
     overviewRulerLane: vscode.OverviewRulerLane.Center
 });
 
+const startsWithAlphanumeric = (str: string) => /^[a-zA-Z0-9]/.test(str);
 
 interface VariableLocation {
     name: string;
@@ -715,7 +716,11 @@ export function activate(context: vscode.ExtensionContext) {
                         item.detail = `CBS Command`;
                     }
 
-                    item.sortText = cmdInfo.name;
+                    if (startsWithAlphanumeric(cmdInfo.name)) {
+                        item.sortText = `1_${cmdInfo.name}`;
+                    } else {
+                        item.sortText = `2_${cmdInfo.name}`;
+                    }
                     commandCompletionItems.push(item);
 
                     if (cmdInfo.aliases) {
@@ -750,7 +755,11 @@ export function activate(context: vscode.ExtensionContext) {
                             } else {
                                  aliasItem.detail = `Alias for ${cmdInfo.name}`;
                             }
-                            aliasItem.sortText = alias;
+                            if (startsWithAlphanumeric(alias)) {
+                                aliasItem.sortText = `1_${alias}`;
+                            } else {
+                                aliasItem.sortText = `2_${alias}`;
+                            }
                             commandCompletionItems.push(aliasItem);
                         });
                     }
