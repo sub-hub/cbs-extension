@@ -98,7 +98,18 @@ export function formatLine(
         // --- Start of complex tokenization/reconstruction logic ---
         // THIS IS THE PART THAT NEEDS SIGNIFICANT CHANGE FOR MAPPING
         // For now, we'll keep the existing logic but count newlines in the output
-        const tokens = [];
+        // Helper function to identify inline tags
+        function isInlineTag(tag: string): boolean {
+            return /\{\{(user|char|bot)\}\}/.test(tag);
+        }
+
+        interface Token {
+            type: 'text' | 'tag';
+            text: string;
+            preserveWhitespace?: boolean;
+        }
+
+        const tokens: Token[] = [];
         let currentPos = 0;
         let braceLevel = 0;
         let tagStart = -1;
@@ -123,8 +134,13 @@ export function formatLine(
 
             if (nextBracePos > textStart && braceLevel === 0) {
                 const textBefore = lineText.substring(textStart, nextBracePos);
-                 // Simplified: Treat all text before brace as one token for now
-                 tokens.push({ type: 'text', text: textBefore });
+                const nextTag = lineText.substring(nextBracePos).match(/\{\{(user|char|bot)\}\}/);
+                // If next tag is an inline tag, preserve whitespace
+                tokens.push({ 
+                    type: 'text', 
+                    text: textBefore,
+                    preserveWhitespace: nextTag !== null
+                });
             }
 
             if (isOpening) {
@@ -163,16 +179,15 @@ export function formatLine(
             tokens.push({ type: 'text', text: lineText.substring(textStart) });
         }
 
-        // Filter out purely whitespace text tokens adjacent to tags that will cause newlines
-        // (This simplification might lose some original whitespace, needs refinement for accurate mapping)
+        // Only filter out whitespace for non-inline tags
         const meaningfulTokens = tokens.filter((token, index, arr) => {
-            if (token.type === 'text' && token.text.trim().length === 0) {
-                const prevToken = index > 0 ? arr[index - 1] : null;
+            if (token.type === 'text' && token.text.trim().length === 0 && !token.preserveWhitespace) {
                 const nextToken = index < arr.length - 1 ? arr[index + 1] : null;
-                // Simple check: remove whitespace if next token is a tag (likely block start/end)
-                if (nextToken && nextToken.type === 'tag' && (nextToken.text.startsWith('{{#') || nextToken.text.startsWith('{{/'))) return false;
-                // Simple check: remove whitespace if previous token is a tag
-                if (prevToken && prevToken.type === 'tag' && (prevToken.text.startsWith('{{#') || prevToken.text.startsWith('{{/'))) return false;
+                // Only remove whitespace if next token is a block tag
+                if (nextToken && nextToken.type === 'tag' && !isInlineTag(nextToken.text) && 
+                    (nextToken.text.startsWith('{{#') || nextToken.text.startsWith('{{/'))) {
+                    return false;
+                }
             }
             return true;
         });
@@ -187,9 +202,11 @@ export function formatLine(
              let prefix = '';
              let currentIndentStr = indentChar.repeat(reconstructionIndentLevel);
 
+
              if (token.type === 'tag') {
                  const isBlockStart = token.text.startsWith('{{#');
                  const isBlockEnd = token.text.startsWith('{{/');
+                 const isInline = isInlineTag(token.text);
 
                  if (isBlockEnd) {
                      reconstructionIndentLevel = Math.max(0, reconstructionIndentLevel - 1);
@@ -197,30 +214,41 @@ export function formatLine(
                  }
 
                  if (!firstToken) {
-                     prefix = '\n'; // Assume tags often go on new lines (simplification)
+                     // Only add newline for non-inline tags
+                     if (!isInline) {
+                         prefix = '\n'; // Add newlines only for block tags and other non-inline tags
+                     } else {
+                         prefix = ''; // No extra space needed for inline tags
+                     }
                  }
 
-                 reconstructedLine += prefix + currentIndentStr + token.text.trim(); // Trim whitespace around tags
+                 // For inline tags, don't add indentation
+                     reconstructedLine += prefix + (isInline ? '' : currentIndentStr) + token.text;
 
                  if (isBlockStart) {
                      reconstructionIndentLevel++; // Indent *after* printing start tag
                  }
 
              } else { // Text token
-                 const trimmedText = token.text.trim();
-                 if (trimmedText.length > 0) {
+                 if (token.text.length > 0) {
                      if (!firstToken) {
-                         // Check if previous was a tag, if so, newline + indent
+                         // Check if previous was a tag
                          const lastChar = reconstructedLine.length > 0 ? reconstructedLine[reconstructedLine.length - 1] : '';
-                         if (lastChar === '}') { // Simple check if previous was likely a tag
+                         const prevToken = meaningfulTokens[meaningfulTokens.indexOf(token) - 1];
+                         const isPrevInline = prevToken?.type === 'tag' && isInlineTag(prevToken.text);
+                         
+                         if (lastChar === '}' && !isPrevInline) {
                              prefix = '\n' + currentIndentStr;
-                         } else {
+                         } else if (!token.preserveWhitespace) {
                              prefix = ' '; // Add space between text/tags on same line
+                         } else {
+                             prefix = ''; // Keep original spacing for inline tags
                          }
                      } else {
                          prefix = currentIndentStr; // Indent first text token
                      }
-                     reconstructedLine += prefix + trimmedText;
+                     // Use original text if preserving whitespace, otherwise trim
+                     reconstructedLine += prefix + (token.preserveWhitespace ? token.text : token.text.trim());
                  }
              }
              firstToken = false;
