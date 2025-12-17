@@ -18,6 +18,21 @@ const blockStartRegex = /\{\{#([\w-]+)/;
 const pureBlockStartRegex = /\{\{#(if-pure|pure_display)/; // Add other pure blocks if needed
 const blockEndRegex = /\{\{\/(?:[\w-]+)?\}\}|\{\{\/\}\}/; // Matches {{/command}} or {{/}}
 
+// Known block types that should be validated when used in closing tags
+const KNOWN_BLOCK_TYPES = new Set([
+    'if',
+    'if_pure',
+    'if-pure',
+    'when',
+    'each',
+    'func',
+    'pure',
+    'pure_display',
+    'puredisplay',
+    'code',
+    'escape'
+]);
+
 /**
  * Manages CBS language diagnostics and linting logic.
  */
@@ -190,6 +205,10 @@ export class CbsLinter {
                 }
                 // Check if it's a block end tag
                 else if (tagContent.startsWith('/')) {
+                    // Extract the closing tag name (e.g., "when" from "/when" or empty from "/")
+                    const closeMatch = tagContent.match(/^\/(\w[\w-]*)?/);
+                    const closingName = closeMatch && closeMatch[1] ? closeMatch[1] : '';
+                    
                     // In RisuAI, any {{/...}} closes a block
                     const openTag = blockStack.pop();
                     
@@ -199,6 +218,23 @@ export class CbsLinter {
                             `Unexpected closing tag '${fullTag.trim()}'. No matching opening tag found.`,
                             vscode.DiagnosticSeverity.Error
                         ));
+                    } else if (closingName && KNOWN_BLOCK_TYPES.has(closingName)) {
+                        // If the closing tag has a known block type name, validate it matches the opening tag
+                        if (openTag.name !== closingName) {
+                            // Mismatch error on closing tag
+                            diagnostics.push(new vscode.Diagnostic(
+                                range,
+                                `Mismatched closing tag: Block opened with '{{#${openTag.name}}}' on line ${openTag.line + 1} but closed with '{{/${closingName}}}'. Use '{{/${openTag.name}}}' or '{{/}}' instead.`,
+                                vscode.DiagnosticSeverity.Error
+                            ));
+                            
+                            // Mismatch error on opening tag
+                            diagnostics.push(new vscode.Diagnostic(
+                                openTag.range,
+                                `Mismatched closing tag: Block '{{#${openTag.name}}}' is closed with '{{/${closingName}}}' on line ${startLine + 1}. Expected '{{/${openTag.name}}}' or '{{/}}'.`,
+                                vscode.DiagnosticSeverity.Error
+                            ));
+                        }
                     }
                 }
                 
