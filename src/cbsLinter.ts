@@ -130,51 +130,92 @@ export class CbsLinter {
         const diagnostics: vscode.Diagnostic[] = [];
         const blockStack: { name: string; range: vscode.Range; line: number }[] = [];
         const text = document.getText();
-        const lines = text.split(/\r?\n/);
-
-        lines.forEach((lineText, lineNumber) => {
-            let match;
-            // Simple regex for finding block tags on a line - might need refinement for tags spanning lines
-            const lineTagRegex = /\{\{(\/?#?[\w-]*).*?\}\}/g;
-
-            while ((match = lineTagRegex.exec(lineText)) !== null) {
-                const fullTag = match[0];
-                const tagName = match[1]; // e.g., #if, /if, command
-                const matchIndex = match.index;
-                const startPos = new vscode.Position(lineNumber, matchIndex);
-                const endPos = new vscode.Position(lineNumber, matchIndex + fullTag.length);
+        
+        // Parse through the entire text to handle multi-line tags
+        let index = 0;
+        let line = 0;
+        let lineStart = 0;
+        
+        while (index < text.length) {
+            // Track line numbers
+            if (text[index] === '\n') {
+                line++;
+                lineStart = index + 1;
+            }
+            
+            // Look for opening {{
+            if (text.substring(index, index + 2) === '{{') {
+                // Find the closing }}
+                let braceCount = 1;
+                let endIndex = index + 2;
+                
+                while (endIndex < text.length && braceCount > 0) {
+                    if (text.substring(endIndex, endIndex + 2) === '{{') {
+                        braceCount++;
+                        endIndex += 2;
+                    } else if (text.substring(endIndex, endIndex + 2) === '}}') {
+                        braceCount--;
+                        if (braceCount === 0) {
+                            endIndex += 2;
+                            break;
+                        }
+                        endIndex += 2;
+                    } else {
+                        endIndex++;
+                    }
+                }
+                
+                // Extract the tag content
+                const fullTag = text.substring(index, endIndex);
+                const tagContent = fullTag.substring(2, fullTag.length - 2).trim();
+                
+                // Calculate position
+                const startLine = line;
+                const startChar = index - lineStart;
+                const endLine = line + (fullTag.match(/\n/g) || []).length;
+                const endChar = endLine === startLine ? startChar + fullTag.length : fullTag.length - fullTag.lastIndexOf('\n') - 1;
+                
+                const startPos = new vscode.Position(startLine, startChar);
+                const endPos = new vscode.Position(endLine, endChar);
                 const range = new vscode.Range(startPos, endPos);
-
-                if (tagName.startsWith('#')) { // Block start tag
-                    const blockName = tagName.substring(1);
-                    blockStack.push({ name: blockName, range: range, line: lineNumber });
-                } else if (tagName.startsWith('/')) { // Block end tag
-                    // In RisuAI, any {{/...}} closes a block, regardless of what comes after the /
-                    // So {{/}}, {{/if}}, {{/1}}, {{/anything}} all close blocks
+                
+                // Check if it's a block start tag
+                if (tagContent.startsWith('#')) {
+                    // Extract block name (e.g., "when" from "#when::condition" or "if" from "#if true")
+                    const blockMatch = tagContent.match(/^#([\w-]+)/);
+                    if (blockMatch) {
+                        const blockName = blockMatch[1];
+                        blockStack.push({ name: blockName, range: range, line: startLine });
+                    }
+                }
+                // Check if it's a block end tag
+                else if (tagContent.startsWith('/')) {
+                    // In RisuAI, any {{/...}} closes a block
                     const openTag = blockStack.pop();
-
+                    
                     if (!openTag) {
                         diagnostics.push(new vscode.Diagnostic(
                             range,
-                            `Unexpected closing tag '${fullTag}'. No matching opening tag found.`,
+                            `Unexpected closing tag '${fullTag.trim()}'. No matching opening tag found.`,
                             vscode.DiagnosticSeverity.Error
                         ));
                     }
-                    // RisuAI does not validate the block name in closing tags
-                    // Any {{/...}} will close the most recent open block
                 }
+                
+                index = endIndex;
+            } else {
+                index++;
             }
-        });
-
+        }
+        
         // Any remaining tags on the stack are unclosed
         blockStack.forEach(unclosedTag => {
             diagnostics.push(new vscode.Diagnostic(
                 unclosedTag.range,
-                `Unclosed block tag '{{#${unclosedTag.name}}}'. No matching closing tag found.`,
+                `Unclosed block tag '{{#${unclosedTag.name}}}' on line ${unclosedTag.line + 1}. No matching closing tag found.`,
                 vscode.DiagnosticSeverity.Error
             ));
         });
-
 
         return diagnostics;
     }
