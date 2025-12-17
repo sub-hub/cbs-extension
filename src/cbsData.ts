@@ -52,7 +52,9 @@ export const cbsCommandsData: CbsCommandInfo[] = [
 
   // Time Syntaxes
   { name: 'time', description: 'Replaced with the current time (HH:MM:SS).', signatureLabel: 'time' },
+  { name: 'time', description: 'Replaced with the current date/time formatted by A, optionally using timestamp B.', signatureLabel: 'time::A::[B]', parameters: [{ label: 'A (format string)' }, { label: 'B (timestamp)', documentation: 'Optional Unix timestamp in ms.' }] },
   { name: 'date', description: 'Replaced with the current date (YYYY-MM-DD).', signatureLabel: 'date' },
+  { name: 'date', description: 'Replaced with the current date/time formatted by A, optionally using timestamp B.', signatureLabel: 'date::A::[B]', parameters: [{ label: 'A (format string)' }, { label: 'B (timestamp)', documentation: 'Optional Unix timestamp in ms.' }] },
   { name: 'datetimeformat', aliases: ['date_time_format'], description: 'Replaced with the current date/time formatted by A, optionally using timestamp B.', signatureLabel: 'datetimeformat::A::[B]', parameters: [{ label: 'A (format string)' }, { label: 'B (timestamp)', documentation: 'Optional Unix timestamp in ms.' }] },
   { name: 'isotime', description: 'Replaced with the current time in UTC (HH:MM:SS).', signatureLabel: 'isotime' },
   { name: 'isodate', description: 'Replaced with the current date in UTC (YYYY-MM-DD).', signatureLabel: 'isodate' },
@@ -181,8 +183,11 @@ export const cbsCommandsData: CbsCommandInfo[] = [
   { name: 'position', description: 'Replaced with lorebook content at position pt_A.', signatureLabel: 'position::A', parameters: [{ label: 'A (position name)' }] },
   { name: 'random', description: "Replaced with a pseudo-random floating-point number (0-1).", signatureLabel: 'random' },
   { name: 'random', description: 'Replaced with a random value from parameters. Can use :: or : with , as separator (e.g., random::A::B or random:A,B).', signatureLabel: 'random:A,[B...]', parameters: [{ label: 'A, B... (values)' }], isPrefixCommand: true }, // Note: isPrefixCommand here refers to the colon format, not a general prefix.
+  { name: 'pick', description: 'Consistent hash-based pseudo-random floating-point number (0-1) for the same message.', signatureLabel: 'pick' },
   { name: 'pick', description: 'Consistent random value from parameters for the same message. Can use :: or : with , as separator.', signatureLabel: 'pick:A,[B...]', parameters: [{ label: 'A, B... (values)' }], isPrefixCommand: true }, // Note: isPrefixCommand here refers to the colon format.
+  { name: 'roll', description: 'Random number between 1 and 6 (default dice roll).', signatureLabel: 'roll' },
   { name: 'roll', description: 'Random number between 1 and A (e.g., roll:6 or roll:d20).', signatureLabel: 'roll:A', parameters: [{ label: 'A (max value or dX)' }], isPrefixCommand: true },
+  { name: 'rollp', description: 'Consistent random number between 1 and 6 for the same message (default dice roll).', signatureLabel: 'rollp' },
   { name: 'rollp', description: 'Consistent random number between 1 and A for the same message (e.g., rollp:6 or rollp:d20).', signatureLabel: 'rollp:A', parameters: [{ label: 'A (max value or dX)' }], isPrefixCommand: true },
   { name: 'spread', description: 'Joins array A with :: for use in other syntaxes.', signatureLabel: 'spread::A', parameters: [{ label: 'A (array)' }] },
   { name: 'replace', description: 'Replaced with A with all B replaced by C.', signatureLabel: 'replace::A::B::C', parameters: [{ label: 'A (text)' }, { label: 'B (search)' }, { label: 'C (replace)' }] },
