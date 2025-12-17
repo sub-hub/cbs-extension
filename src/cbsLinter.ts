@@ -260,15 +260,24 @@ export class CbsLinter {
 
         if (tagContent.startsWith('#')) {
             isBlockTag = true;
-            const firstSpaceIdx = tagContent.indexOf(' ');
-            if (firstSpaceIdx !== -1) {
-                commandName = tagContent.substring(0, firstSpaceIdx);
-                paramsString = tagContent.substring(firstSpaceIdx + 1); // Retain original spacing for offset calculations
-            } else { // Block tag with no parameters (e.g., {{#pure}})
-                commandName = tagContent;
-                paramsString = "";
+            // Check for '::' separator first (e.g., {{#when::condition::and::condition2}})
+            const doubleSeparatorIdx = this.findTopLevelSeparator(tagContent, '::');
+            if (doubleSeparatorIdx !== -1) {
+                commandName = tagContent.substring(0, doubleSeparatorIdx);
+                paramsString = tagContent.substring(doubleSeparatorIdx + 2);
+                paramsArray = this.splitCbsParamsSmart(paramsString);
+            } else {
+                // Fall back to space-based parsing (e.g., {{#each array item}})
+                const firstSpaceIdx = tagContent.indexOf(' ');
+                if (firstSpaceIdx !== -1) {
+                    commandName = tagContent.substring(0, firstSpaceIdx);
+                    paramsString = tagContent.substring(firstSpaceIdx + 1); // Retain original spacing for offset calculations
+                } else { // Block tag with no parameters (e.g., {{#pure}})
+                    commandName = tagContent;
+                    paramsString = "";
+                }
+                paramsArray = this.splitCbsParamsSmart(paramsString);
             }
-            paramsArray = this.splitCbsParamsSmart(paramsString);
         } else { // Regular command
             isBlockTag = false;
             
