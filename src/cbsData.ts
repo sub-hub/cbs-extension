@@ -14,6 +14,10 @@ export interface CbsCommandInfo {
   isBlock?: boolean; // True if it starts with #
   isPrefixCommand?: boolean; // True if it uses ':' separator like 'reverse:A'
   isInternal?: boolean; // For commands not typically for direct user use
+  deprecated?: {
+    message: string;
+    replacement?: string;
+  };
 }
 
 export const cbsCommandsData: CbsCommandInfo[] = [
@@ -120,6 +124,20 @@ export const cbsCommandsData: CbsCommandInfo[] = [
   { name: 'u', aliases: ['unicodedecodefromhex'], description: 'Replaced with character decoded from hexadecimal unicode value A.', signatureLabel: 'u::A', parameters: [{ label: 'A (hexadecimal unicode value)' }] },
   { name: 'ue', aliases: ['unicodeencodefromhex'], description: 'Replaced with character decoded from hexadecimal unicode value A. (Note: Parser implements this as decode, similar to `u`)', signatureLabel: 'ue::A', parameters: [{ label: 'A (hexadecimal unicode value)' }] },
 
+  // Encryption/Obfuscation Commands
+  { name: 'xor', aliases: ['xorencrypt', 'xorencode', 'xore'], description: 'Encrypts a string using XOR cipher with 0xFF key and encodes result as base64. Simple obfuscation method. Reversible with xordecrypt.', signatureLabel: 'xor::A', parameters: [{ label: 'A (string to encrypt)' }] },
+  { name: 'xordecrypt', aliases: ['xordecode', 'xord'], description: 'Decrypts a base64-encoded XOR-encrypted string back to original text. Reverses the xor function using same 0xFF key.', signatureLabel: 'xordecrypt::A', parameters: [{ label: 'A (base64 encrypted string)' }] },
+  { name: 'crypt', aliases: ['crypto', 'caesar', 'encrypt', 'decrypt'], description: 'Applies Caesar cipher encryption/decryption with custom shift value (default 32768). Shifts Unicode character codes within 16-bit range. Using default shift twice returns to original text.', signatureLabel: 'crypt::A::[B]', parameters: [{ label: 'A (string)' }, { label: 'B (shift value, optional)', documentation: 'Defaults to 32768. Same shift encrypts and decrypts.' }] },
+
+  // Special Display Commands
+  { name: 'tex', aliases: ['latex', 'katex'], description: 'Renders LaTeX math expressions. Wraps the input in double dollar signs ($$...$$) for math rendering.', signatureLabel: 'tex::A', parameters: [{ label: 'A (LaTeX expression)' }] },
+  { name: 'ruby', aliases: ['furigana'], description: 'Renders ruby text (furigana) for East Asian typography. Creates HTML ruby element with base text and pronunciation guide.', signatureLabel: 'ruby::A::B', parameters: [{ label: 'A (base text)' }, { label: 'B (ruby/pronunciation text)' }] },
+  { name: 'codeblock', description: 'Formats text as a code block using HTML pre and code tags. Optionally specify language for syntax highlighting.', signatureLabel: 'codeblock::[A]:B', parameters: [{ label: 'A (language, optional)' }, { label: 'B (code content)' }] },
+
+  // Additional Basic Data Commands
+  { name: 'trigger_id', aliases: ['triggerid'], description: 'Returns the ID value from the risu-id attribute of the clicked element that triggered the manual trigger. Returns "null" if no ID was provided.', signatureLabel: 'trigger_id' },
+  { name: 'chardisplayasset', description: 'Returns a JSON array of character display asset names, filtered by prebuilt asset exclusion settings. Only includes assets not in the exclude list.', signatureLabel: 'chardisplayasset' },
+
   // Conditional Syntaxes
   { name: 'prefill_supported', aliases: ['prefillsupported', 'prefill'], description: 'Returns 1 if the model supports prefilling (e.g. Claude), else 0.', signatureLabel: 'prefill_supported' },
   { name: 'jbtoggled', description: 'Returns 1 if jailbreak is enabled, else 0.', signatureLabel: 'jbtoggled' },
@@ -203,20 +221,25 @@ export const cbsCommandsData: CbsCommandInfo[] = [
   // Function/Block Calling
   { name: 'call', description: 'Calls a previously defined #func block A with arguments B, C...', signatureLabel: 'call::A::[B...]', parameters: [{ label: 'A (function name)' }, { label: 'B... (arguments)' }] },
 
+  // Comment Syntaxes
+  { name: '//', description: 'A comment for documentation. Content is ignored by the parser and does not appear in output.', signatureLabel: '// comment', parameters: [{ label: 'comment text' }], isPrefixCommand: true },
+
+  // Internal Commands
+  { name: '__', description: '**INTERNAL FUNCTION - DO NOT USE**. Calls internal RisuAI functions. Not for general use.', signatureLabel: '__::args...', isInternal: true },
 
   // For various reasons, the commented-out CBS commands are listed below. They are not actually used but are kept in the code.
 
-  // Internal Commands Skip because they are not meant for general use
-//   { name: '__assistantprompt', description: 'Internal command. Behavior may vary (e.g., returns Airisu prompt for `__airisu` character). Not for general use.', signatureLabel: '__assistantprompt', isInternal: true },
-
   // Block Syntaxes Skip because they are handled with snippets in extension.ts
-//   { name: '#if', description: 'Conditional block. Content is processed if condition is true (1).', signatureLabel: '#if condition', parameters: [{ label: 'condition' }], isBlock: true },
-//   { name: '#if_pure', description: 'Conditional block preserving whitespace. Content is processed if condition is true (1).', signatureLabel: '#if_pure condition', parameters: [{ label: 'condition' }], isBlock: true },
+//   { name: '#if', description: 'Conditional block. Content is processed if condition is true (1). **DEPRECATED: Use #when instead.**', signatureLabel: '#if condition', parameters: [{ label: 'condition' }], isBlock: true, deprecated: { message: 'Use #when instead for better operator support.', replacement: '#when' } },
+//   { name: '#if_pure', description: 'Conditional block preserving whitespace. Content is processed if condition is true (1). **DEPRECATED: Use #when::keep instead.**', signatureLabel: '#if_pure condition', parameters: [{ label: 'condition' }], isBlock: true, deprecated: { message: 'Use #when::keep instead for better operator support.', replacement: '#when::keep' } },
 //   { name: '#each', description: 'Loop block over an array.', signatureLabel: '#each array [as item]', parameters: [{ label: 'array' }, { label: 'item (variable name, optional)' }], isBlock: true },
 //   { name: '#func', description: 'Defines a function block.', signatureLabel: '#func functionName [arg1] [arg2]...', parameters: [{ label: 'functionName' }, { label: 'arg... (optional argument names)' }], isBlock: true },
 //   { name: '#pure_display', aliases: ['#puredisplay'], description: 'Displays content without formatting or CBS parsing, but replaces `{{` and `}}` with escaped versions.', signatureLabel: '#pure_display', isBlock: true },
-//   { name: '#pure', description: 'Preserves whitespace and prevents CBS parsing within the block.', signatureLabel: '#pure', isBlock: true },
+//   { name: '#pure', description: 'Preserves whitespace and prevents CBS parsing within the block. **DEPRECATED: Use #puredisplay instead.**', signatureLabel: '#pure', isBlock: true, deprecated: { message: 'Use #puredisplay instead to avoid reparsing issues.', replacement: '#puredisplay' } },
 //   { name: '#code', description: 'Content within this block is normalized: leading/trailing whitespace trimmed per line, then overall trim. Escape sequences (e.g., \\n, \\uXXXX) are converted to their respective characters.', signatureLabel: '#code', isBlock: true },
+//   { name: '#escape', description: 'Prevents CBS parsing within the block. Content is displayed as-is without any CBS processing.', signatureLabel: '#escape', isBlock: true },
+//   { name: '#when', description: 'Advanced conditional block with operator support. Supports operators like and, or, not, is, isnot, keep, legacy, var, vis, vnotis, toggle, tis, tisnot, >, <, >=, <=. Operators can be combined.', signatureLabel: '#when::[operators]::condition', parameters: [{ label: 'operators (optional)', documentation: 'keep, legacy, not, and, or, is, isnot, var, vis, vnotis, toggle, tis, tisnot, >, <, >=, <=' }, { label: 'condition' }], isBlock: true },
+//   { name: ':else', description: 'Else statement for CBS. Must be used inside {{#when}}. For multiline blocks, :else must be on its own line.', signatureLabel: ':else', isBlock: true },
 ];
 
 // Helper function to find command info by name (including prefix like #) or alias

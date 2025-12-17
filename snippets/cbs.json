@@ -1,21 +1,50 @@
 {
-  "CBS: if block": {
+  "CBS: when block": {
+    "prefix": ["cbswhen", "{{#when", "when", "[when"],
+    "body": [
+      "{{#when ${1:condition}}}",
+      "\t$0",
+      "{{/when}}"
+    ],
+    "description": "Inserts a when block (advanced conditional with operator support)."
+  },
+  "CBS: when block with else": {
+    "prefix": ["cbswhenelse", "{{#when-else", "when-else", "[when-else"],
+    "body": [
+      "{{#when ${1:condition}}}",
+      "\t$2",
+      "{{:else}}",
+      "\t$0",
+      "{{/when}}"
+    ],
+    "description": "Inserts a when block with else clause."
+  },
+  "CBS: when block with operators": {
+    "prefix": ["cbswhenop", "when-operator"],
+    "body": [
+      "{{#when::${1|keep,legacy,not,and,or,var,is,isnot,>,<,>=,<=|}::${2:condition}}}",
+      "\t$0",
+      "{{/when}}"
+    ],
+    "description": "Inserts a when block with operator selection."
+  },
+  "CBS: if block (deprecated)": {
     "prefix": ["cbsif", "{{#if", "if", "[if"],
     "body": [
       "{{#if ${1:condition}}}",
       "\t$0",
       "{{/if}}"
     ],
-    "description": "Inserts an if block."
+    "description": "⚠️ DEPRECATED: Use {{#when}} instead. Inserts an if block."
   },
-  "CBS: if-pure block": {
+  "CBS: if-pure block (deprecated)": {
     "prefix": ["cbsifp", "{{#if-pure", "if-pure", "[if-pure"],
     "body": [
       "{{#if-pure ${1:condition}}}",
       "$0",
       "{{/if-pure}}"
     ],
-    "description": "Inserts an if-pure block (preserves whitespace)."
+    "description": "⚠️ DEPRECATED: Use {{#when::keep::condition}} instead. Inserts an if-pure block (preserves whitespace)."
   },
   "CBS: each block": {
     "prefix": ["cbseach", "{{#each", "each", "[each"],
@@ -36,12 +65,79 @@
     "description": "Inserts a func block definition."
   },
   "CBS: pure_display block": {
-    "prefix": ["cbspured", "{{#pure_display", "pure_display", "[pure_display"],
+    "prefix": ["cbspured", "{{#pure_display", "pure_display", "[pure_display", "puredisplay"],
     "body": [
       "{{#pure_display}}",
       "$0",
       "{{/pure_display}}"
     ],
-    "description": "Inserts a pure_display block."
+    "description": "Inserts a pure_display block (displays without CBS processing)."
+  },
+  "CBS: code block": {
+    "prefix": ["cbscode", "{{#code", "code", "[code"],
+    "body": [
+      "{{#code}}",
+      "$0",
+      "{{/code}}"
+    ],
+    "description": "Inserts a code block (normalizes whitespace and escape sequences)."
+  },
+  "CBS: escape block": {
+    "prefix": ["cbsescape", "{{#escape", "escape", "[escape"],
+    "body": [
+      "{{#escape}}",
+      "$0",
+      "{{/escape}}"
+    ],
+    "description": "Inserts an escape block (prevents CBS parsing)."
+  },
+  "CBS: comment": {
+    "prefix": ["cbscomment", "{{//", "//", "[//"],
+    "body": [
+      "{{// ${1:comment}$0}}"
+    ],
+    "description": "Inserts a CBS comment (ignored by parser)."
+  },
+  "CBS: roll dice (prefix)": {
+    "prefix": ["roll:", "{{roll:"],
+    "body": [
+      "{{roll:${1:6}$0}}"
+    ],
+    "description": "Random dice roll (prefix syntax). Examples: roll:6, roll:2d10"
+  },
+  "CBS: rollp dice (prefix)": {
+    "prefix": ["rollp:", "{{rollp:"],
+    "body": [
+      "{{rollp:${1:6}$0}}"
+    ],
+    "description": "Consistent random dice roll (prefix syntax). Examples: rollp:6, rollp:2d10"
+  },
+  "CBS: pick random (prefix)": {
+    "prefix": ["pick:", "{{pick:"],
+    "body": [
+      "{{pick:${1:option1},${2:option2}$0}}"
+    ],
+    "description": "Consistent random selection (prefix syntax). Use comma or colon to separate options."
+  },
+  "CBS: random (prefix)": {
+    "prefix": ["random:", "{{random:"],
+    "body": [
+      "{{random:${1:option1},${2:option2}$0}}"
+    ],
+    "description": "Random selection (prefix syntax). Use comma or colon to separate options."
+  },
+  "CBS: reverse (prefix)": {
+    "prefix": ["reverse:", "{{reverse:"],
+    "body": [
+      "{{reverse:${1:text}$0}}"
+    ],
+    "description": "Reverses a string (prefix syntax)."
+  },
+  "CBS: datetimeformat (prefix)": {
+    "prefix": ["datetimeformat:", "{{datetimeformat:"],
+    "body": [
+      "{{datetimeformat:${1:YYYY-MM-DD HH:mm:ss}$0}}"
+    ],
+    "description": "Formats current date/time (prefix syntax)."
   }
 }

@@ -135,7 +135,7 @@ export class CbsLinter {
         lines.forEach((lineText, lineNumber) => {
             let match;
             // Simple regex for finding block tags on a line - might need refinement for tags spanning lines
-            const lineTagRegex = /\{\{(\/?#?[\w-]+).*?\}\}/g;
+            const lineTagRegex = /\{\{(\/?#?[\w-]*).*?\}\}/g;
 
             while ((match = lineTagRegex.exec(lineText)) !== null) {
                 const fullTag = match[0];
@@ -149,7 +149,8 @@ export class CbsLinter {
                     const blockName = tagName.substring(1);
                     blockStack.push({ name: blockName, range: range, line: lineNumber });
                 } else if (tagName.startsWith('/')) { // Block end tag
-                    const expectedBlockName = tagName.substring(1); // Can be empty for {{/}}
+                    // In RisuAI, any {{/...}} closes a block, regardless of what comes after the /
+                    // So {{/}}, {{/if}}, {{/1}}, {{/anything}} all close blocks
                     const openTag = blockStack.pop();
 
                     if (!openTag) {
@@ -158,21 +159,9 @@ export class CbsLinter {
                             `Unexpected closing tag '${fullTag}'. No matching opening tag found.`,
                             vscode.DiagnosticSeverity.Error
                         ));
-                    } else if (expectedBlockName && openTag.name !== expectedBlockName) {
-                        // Mismatched specific closing tag (e.g., {{#if}} closed by {{/each}})
-                        diagnostics.push(new vscode.Diagnostic(
-                            range,
-                            `Closing tag '${fullTag}' does not match opening tag '{{#${openTag.name}}}' on line ${openTag.line + 1}.`,
-                            vscode.DiagnosticSeverity.Error
-                        ));
-                        // Also add error to the opening tag for clarity
-                         diagnostics.push(new vscode.Diagnostic(
-                            openTag.range,
-                            `Opening tag '{{#${openTag.name}}}' mismatch with closing tag '${fullTag}' on line ${lineNumber + 1}.`,
-                            vscode.DiagnosticSeverity.Error
-                        ));
                     }
-                    // If expectedBlockName is empty ({{/}}), it matches any block, so no error here if openTag exists.
+                    // RisuAI does not validate the block name in closing tags
+                    // Any {{/...}} will close the most recent open block
                 }
             }
         });
@@ -258,10 +247,16 @@ export class CbsLinter {
             return diagnostics; // Skip empty, end tags, and calc/question mark tags from this level of command processing
         }
 
+        // Skip :else special keyword (not a command)
+        if (tagContent === ':else') {
+            return diagnostics;
+        }
+
         let commandName: string;
         let paramsString: string = ""; // Raw string of all parameters
         let paramsArray: string[];    // Parameters split, maintaining original spacing from paramsString
         let isBlockTag = false;
+        let isPrefixCommand = false;
 
         if (tagContent.startsWith('#')) {
             isBlockTag = true;
@@ -276,15 +271,34 @@ export class CbsLinter {
             paramsArray = this.splitCbsParamsSmart(paramsString);
         } else { // Regular command
             isBlockTag = false;
-            const separatorIdxInTagContent = this.findTopLevelSeparator(tagContent, '::');
-            if (separatorIdxInTagContent !== -1) {
-                commandName = tagContent.substring(0, separatorIdxInTagContent);
-                paramsString = tagContent.substring(separatorIdxInTagContent + 2);
+            
+            // Check for prefix command syntax (single ':' not followed by another ':')
+            // First, try to find '::' 
+            const doubleSeparatorIdx = this.findTopLevelSeparator(tagContent, '::');
+            
+            if (doubleSeparatorIdx !== -1) {
+                // Standard '::' separator
+                commandName = tagContent.substring(0, doubleSeparatorIdx);
+                paramsString = tagContent.substring(doubleSeparatorIdx + 2);
+                paramsArray = this.splitCbsParamsSmart(paramsString);
             } else {
-                commandName = tagContent;
-                paramsString = "";
+                // No '::' found, try single ':'
+                const prefixSeparatorIdx = this.findTopLevelSeparator(tagContent, ':');
+                
+                if (prefixSeparatorIdx !== -1) {
+                    // Prefix command with single ':'
+                    isPrefixCommand = true;
+                    commandName = tagContent.substring(0, prefixSeparatorIdx);
+                    paramsString = tagContent.substring(prefixSeparatorIdx + 1); // Skip single ':'
+                    // For prefix commands, don't split by '::' - treat rest as single parameter
+                    paramsArray = [paramsString]; // Simplified: treat as single param
+                } else {
+                    // No separator - command only
+                    commandName = tagContent;
+                    paramsString = "";
+                    paramsArray = [];
+                }
             }
-            paramsArray = this.splitCbsParamsSmart(paramsString);
         }
         
         const numParamsProvided = paramsArray.length;
@@ -298,8 +312,30 @@ export class CbsLinter {
                     diagnostics.push(new vscode.Diagnostic(rangeForThisTag, `Unknown command '${commandName}'.`, vscode.DiagnosticSeverity.Error));
                 }
             } else {
+                // Check for deprecated commands
+                for (const commandInfo of commandInfos) {
+                    if (commandInfo.deprecated) {
+                        const message = commandInfo.deprecated.replacement 
+                            ? `Command '${commandName}' is deprecated. ${commandInfo.deprecated.message} Use '${commandInfo.deprecated.replacement}' instead.`
+                            : `Command '${commandName}' is deprecated. ${commandInfo.deprecated.message}`;
+                        diagnostics.push(new vscode.Diagnostic(
+                            rangeForThisTag,
+                            message,
+                            vscode.DiagnosticSeverity.Warning
+                        ));
+                        break; // Only show one deprecation warning per command
+                    }
+                }
+
                 let isValidUsage = false;
                 for (const commandInfo of commandInfos) {
+                    // For prefix commands, skip strict parameter count validation
+                    // since they often have flexible syntax (e.g., roll:6 or roll:2d10)
+                    if (isPrefixCommand && commandInfo.isPrefixCommand) {
+                        isValidUsage = true;
+                        break;
+                    }
+                    
                     const requiredParams = commandInfo.parameters?.filter(p => !p.label.includes('optional') && !p.label.startsWith('[') && !p.label.endsWith('?]')).length ?? 0;
                     const totalExpectedParams = commandInfo.parameters?.length ?? 0;
                     const allowsVariableParams = commandInfo.signatureLabel.includes('...');
@@ -323,6 +359,24 @@ export class CbsLinter {
                         `Incorrect parameter count for command '${commandName}'. Provided ${numParamsProvided} parameter(s). Valid signature(s): ${possibleSignatures}`,
                         vscode.DiagnosticSeverity.Error
                     ));
+                }
+            }
+        }
+        // Check for deprecated block commands
+        else if (isBlockTag) {
+            const blockCommandName = commandName; // Already includes # prefix
+            const commandInfos = findAllCommandInfo(blockCommandName);
+            for (const commandInfo of commandInfos) {
+                if (commandInfo.deprecated) {
+                    const message = commandInfo.deprecated.replacement 
+                        ? `Block '${blockCommandName}' is deprecated. ${commandInfo.deprecated.message} Use '${commandInfo.deprecated.replacement}' instead.`
+                        : `Block '${blockCommandName}' is deprecated. ${commandInfo.deprecated.message}`;
+                    diagnostics.push(new vscode.Diagnostic(
+                        rangeForThisTag,
+                        message,
+                        vscode.DiagnosticSeverity.Warning
+                    ));
+                    break; // Only show one deprecation warning per block
                 }
             }
         }
