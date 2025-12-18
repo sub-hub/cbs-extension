@@ -1,6 +1,6 @@
 {
   "CBS: when block": {
-    "prefix": ["cbswhen", "{{#when", "when", "[when"],
+    "prefix": ["when", "cbswhen", "{{#when", "[when"],
     "body": [
       "{{#when ${1:condition}}}",
       "\t$0",
@@ -9,7 +9,7 @@
     "description": "Inserts a when block (advanced conditional with operator support)."
   },
   "CBS: when block with else": {
-    "prefix": ["cbswhenelse", "{{#when-else", "when-else", "[when-else"],
+    "prefix": ["when-else", "cbswhenelse", "{{#when-else", "[when-else"],
     "body": [
       "{{#when ${1:condition}}}",
       "\t$2",
@@ -20,7 +20,7 @@
     "description": "Inserts a when block with else clause."
   },
   "CBS: when block with operators": {
-    "prefix": ["cbswhenop", "when-operator"],
+    "prefix": ["when-operator", "cbswhenop"],
     "body": [
       "{{#when::${1|keep,legacy,not,and,or,var,is,isnot,>,<,>=,<=|}::${2:condition}}}",
       "\t$0",
