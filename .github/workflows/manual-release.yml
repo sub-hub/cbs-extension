@@ -1,0 +1,66 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (without v prefix)'
+        required: true
+        type: string
+      publish_marketplace:
+        description: 'Publish to VS Code Marketplace'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build extension
+        run: npm run compile
+
+      - name: Package extension
+        run: npx @vscode/vsce package
+        
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ inputs.version }}
+          release_name: Release v${{ inputs.version }}
+          draft: false
+          prerelease: false
+          body: |
+            ## Changes in this Release
+            
+            Manual release created via GitHub Actions.
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./cbs-editor-${{ inputs.version }}.vsix
+          asset_name: cbs-editor-${{ inputs.version }}.vsix
+          asset_content_type: application/zip
+
+      - name: Publish to VS Code Marketplace
+        if: ${{ inputs.publish_marketplace }}
+        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_TOKEN }}
