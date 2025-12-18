@@ -8,6 +8,8 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
       - name: Checkout code
@@ -16,11 +18,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: '20'
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Build extension
         run: npm run compile
@@ -28,35 +34,41 @@ jobs:
       - name: Package extension
         run: npx @vscode/vsce package
         
-      - name: Get version
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Get package info
+        id: package_info
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          echo "VERSION=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          echo "NAME=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "VSIX_FILE=${PACKAGE_NAME}-${PACKAGE_VERSION}.vsix" >> $GITHUB_OUTPUT
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify VSIX file exists
+        run: |
+          if [ ! -f "${{ steps.package_info.outputs.VSIX_FILE }}" ]; then
+            echo "Error: VSIX file not found: ${{ steps.package_info.outputs.VSIX_FILE }}"
+            ls -la *.vsix || echo "No .vsix files found"
+            exit 1
+          fi
+
+      - name: Create Release and Upload Asset
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref_name }}
-          draft: false
-          prerelease: false
+          files: ${{ steps.package_info.outputs.VSIX_FILE }}
           body: |
             ## Changes in this Release
             
             See [CHANGELOG](CHANGELOG.md) for details.
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./cbs-editor-${{ steps.get_version.outputs.VERSION }}.vsix
-          asset_name: cbs-editor-${{ steps.get_version.outputs.VERSION }}.vsix
-          asset_content_type: application/zip
+            
+            ### Installation
+            Download the `.vsix` file and install it in VS Code:
+            ```
+            code --install-extension ${{ steps.package_info.outputs.VSIX_FILE }}
+            ```
+          fail_on_unmatched_files: true
+          generate_release_notes: true
 
       - name: Publish to VS Code Marketplace
+        if: ${{ secrets.VSCE_TOKEN != '' }}
         run: npx @vscode/vsce publish -p ${{ secrets.VSCE_TOKEN }}
-        if: success()
+        continue-on-error: true

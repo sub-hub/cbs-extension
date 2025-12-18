@@ -3,19 +3,27 @@ name: Manual Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version number (without v prefix)'
+      create_tag:
+        description: 'Create new tag (will use package.json version)'
         required: true
-        type: string
+        type: boolean
+        default: true
       publish_marketplace:
         description: 'Publish to VS Code Marketplace'
         required: true
+        type: boolean
+        default: false
+      draft:
+        description: 'Create as draft release'
+        required: false
         type: boolean
         default: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
       - name: Checkout code
@@ -24,11 +32,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: '20'
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Build extension
         run: npm run compile
@@ -36,31 +48,82 @@ jobs:
       - name: Package extension
         run: npx @vscode/vsce package
         
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Get package info
+        id: package_info
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          echo "VERSION=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          echo "NAME=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "VSIX_FILE=${PACKAGE_NAME}-${PACKAGE_VERSION}.vsix" >> $GITHUB_OUTPUT
+          echo "TAG=v${PACKAGE_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Verify VSIX file exists
+        run: |
+          if [ ! -f "${{ steps.package_info.outputs.VSIX_FILE }}" ]; then
+            echo "Error: VSIX file not found: ${{ steps.package_info.outputs.VSIX_FILE }}"
+            ls -la *.vsix || echo "No .vsix files found"
+            exit 1
+          fi
+          echo "Found VSIX file: ${{ steps.package_info.outputs.VSIX_FILE }}"
+
+      - name: Check if tag exists
+        id: check_tag
+        if: ${{ inputs.create_tag }}
+        run: |
+          if git rev-parse "${{ steps.package_info.outputs.TAG }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Warning: Tag ${{ steps.package_info.outputs.TAG }} already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create tag
+        if: ${{ inputs.create_tag && steps.check_tag.outputs.exists != 'true' }}
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git tag -a "${{ steps.package_info.outputs.TAG }}" -m "Release ${{ steps.package_info.outputs.TAG }}"
+          git push origin "${{ steps.package_info.outputs.TAG }}"
+
+      - name: Create Release and Upload Asset
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version }}
-          release_name: Release v${{ inputs.version }}
-          draft: false
-          prerelease: false
+          tag_name: ${{ steps.package_info.outputs.TAG }}
+          name: Release ${{ steps.package_info.outputs.TAG }}
+          draft: ${{ inputs.draft }}
+          files: ${{ steps.package_info.outputs.VSIX_FILE }}
           body: |
-            ## Changes in this Release
+            ## RisuAI CBS Editor ${{ steps.package_info.outputs.VERSION }}
             
             Manual release created via GitHub Actions.
+            
+            ### Installation
+            Download the `.vsix` file and install it in VS Code:
+            ```
+            code --install-extension ${{ steps.package_info.outputs.VSIX_FILE }}
+            ```
+            
+            Or install from the Extensions panel: `Extensions: Install from VSIX...`
+          fail_on_unmatched_files: true
+          generate_release_notes: true
 
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./cbs-editor-${{ inputs.version }}.vsix
-          asset_name: cbs-editor-${{ inputs.version }}.vsix
-          asset_content_type: application/zip
+      - name: Check VSCE token
+        id: check_token
+        if: ${{ inputs.publish_marketplace }}
+        run: |
+          if [ -z "${{ secrets.VSCE_TOKEN }}" ]; then
+            echo "has_token=false" >> $GITHUB_OUTPUT
+            echo "Warning: VSCE_TOKEN secret is not set"
+          else
+            echo "has_token=true" >> $GITHUB_OUTPUT
+          fi
 
       - name: Publish to VS Code Marketplace
-        if: ${{ inputs.publish_marketplace }}
+        if: ${{ inputs.publish_marketplace && steps.check_token.outputs.has_token == 'true' }}
         run: npx @vscode/vsce publish -p ${{ secrets.VSCE_TOKEN }}
+        
+      - name: Skip Marketplace publish
+        if: ${{ inputs.publish_marketplace && steps.check_token.outputs.has_token != 'true' }}
+        run: |
+          echo "::warning::Skipping VS Code Marketplace publish - VSCE_TOKEN not configured"
