@@ -131,6 +131,26 @@
                 "type": "boolean",
                 "default": true,
                 "description": "If true, completing an alias will insert the original command name. If false, it will insert the alias itself."
+            },
+            "cbs.inlayHints.parameterNames.enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Show parameter name hints for CBS commands (e.g., 'variable name', 'value' for settempvar)."
+            },
+            "cbs.inlayHints.blockEnd.enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Show closing block hints at {{/}} tags to indicate which block is being closed."
+            },
+            "cbs.inlayHints.mathSymbols.enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Show mathematical/logical operator symbols for comparison commands (e.g., '==' for equal, '>' for greater)."
+            },
+            "cbs.inlayHints.dataPreview.enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Show preview of data transformations (e.g., emoji preview for unicode commands, hex conversions)."
             }
         }
     },
