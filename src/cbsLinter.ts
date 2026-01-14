@@ -34,6 +34,35 @@ const KNOWN_BLOCK_TYPES = new Set([
 ]);
 
 /**
+ * Checks if a closing tag name is valid for the given opening tag name.
+ * Some blocks can be closed with alternative names (e.g., if_pure can be closed with if).
+ */
+function isValidClosingTag(openingTag: string, closingTag: string): boolean {
+    // Exact match is always valid
+    if (openingTag === closingTag) {
+        return true;
+    }
+    
+    // Normalize tag names by replacing hyphens with underscores
+    const normalizedOpening = openingTag.replace(/-/g, '_');
+    const normalizedClosing = closingTag.replace(/-/g, '_');
+    
+    // if_pure and if-pure can be closed with 'if'
+    if ((normalizedOpening === 'if_pure' || normalizedOpening === 'if-pure') && 
+        (normalizedClosing === 'if' || normalizedClosing === 'if_pure' || normalizedClosing === 'if-pure')) {
+        return true;
+    }
+    
+    // pure_display and puredisplay can be used interchangeably
+    if ((normalizedOpening === 'pure_display' || normalizedOpening === 'puredisplay') &&
+        (normalizedClosing === 'pure_display' || normalizedClosing === 'puredisplay')) {
+        return true;
+    }
+    
+    return false;
+}
+
+/**
  * Manages CBS language diagnostics and linting logic.
  */
 export class CbsLinter {
@@ -220,7 +249,7 @@ export class CbsLinter {
                         ));
                     } else if (closingName && KNOWN_BLOCK_TYPES.has(closingName)) {
                         // If the closing tag has a known block type name, validate it matches the opening tag
-                        if (openTag.name !== closingName) {
+                        if (!isValidClosingTag(openTag.name, closingName)) {
                             // Mismatch error on closing tag
                             diagnostics.push(new vscode.Diagnostic(
                                 range,
