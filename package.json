@@ -154,6 +154,62 @@
             }
         }
     },
+    "colors": [
+        {
+            "id": "editorInlayHint.foreground",
+            "description": "Foreground color of inlay hints",
+            "defaults": {
+                "dark": "#969696",
+                "light": "#969696",
+                "highContrast": "#ffffff"
+            }
+        },
+        {
+            "id": "editorInlayHint.background",
+            "description": "Background color of inlay hints",
+            "defaults": {
+                "dark": "#4d4d4d33",
+                "light": "#d3d3d333",
+                "highContrast": "#00000066"
+            }
+        },
+        {
+            "id": "editorInlayHint.parameterForeground",
+            "description": "Foreground color of parameter inlay hints",
+            "defaults": {
+                "dark": "#c586c0",
+                "light": "#af00db",
+                "highContrast": "#c586c0"
+            }
+        },
+        {
+            "id": "editorInlayHint.parameterBackground",
+            "description": "Background color of parameter inlay hints",
+            "defaults": {
+                "dark": "#c586c020",
+                "light": "#af00db20",
+                "highContrast": "#c586c040"
+            }
+        },
+        {
+            "id": "editorInlayHint.typeForeground",
+            "description": "Foreground color of type inlay hints",
+            "defaults": {
+                "dark": "#4fc1ff",
+                "light": "#0070c1",
+                "highContrast": "#4fc1ff"
+            }
+        },
+        {
+            "id": "editorInlayHint.typeBackground",
+            "description": "Background color of type inlay hints",
+            "defaults": {
+                "dark": "#4fc1ff20",
+                "light": "#0070c120",
+                "highContrast": "#4fc1ff40"
+            }
+        }
+    ],
     "keybindings": [
       {
         "command": "cbs.goToOriginalLocation",

@@ -305,7 +305,7 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
             
             const hint = new vscode.InlayHint(
                 hintPosition,
-                `(${labelText}) `,
+                `⟨${labelText}⟩ `,
                 vscode.InlayHintKind.Parameter
             );
             hint.paddingRight = true;
@@ -353,8 +353,8 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
         const symbol = mathSymbols[commandName];
         if (!symbol) return null;
         
-        // Create hint showing the operator symbol
-        let hintText = ` (${symbol})`;
+        // Create hint showing the operator symbol with visual borders
+        let hintText = ` ⟪${symbol}⟫`;
         
         const hint = new vscode.InlayHint(
             document.positionAt(absolutePosition),
@@ -384,7 +384,7 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
                     const char = String.fromCodePoint(codePoint);
                     const hint = new vscode.InlayHint(
                         document.positionAt(absolutePosition - 2),
-                        ` ${char}`,
+                        ` ⟪${char}⟫`,
                         vscode.InlayHintKind.Type
                     );
                     hint.paddingLeft = true;
@@ -404,7 +404,7 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
                 if (!isNaN(decimal)) {
                     const hint = new vscode.InlayHint(
                         document.positionAt(absolutePosition - 2),
-                        ` (${decimal})`,
+                        ` ⟪${decimal}⟫`,
                         vscode.InlayHintKind.Type
                     );
                     hint.paddingLeft = true;
@@ -425,7 +425,7 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
                     const hexValue = decimal.toString(16).toUpperCase();
                     const hint = new vscode.InlayHint(
                         document.positionAt(absolutePosition - 2),
-                        ` (${hexValue})`,
+                        ` ⟪${hexValue}⟫`,
                         vscode.InlayHintKind.Type
                     );
                     hint.paddingLeft = true;
