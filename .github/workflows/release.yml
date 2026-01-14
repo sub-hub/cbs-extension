@@ -69,6 +69,6 @@ jobs:
           generate_release_notes: true
 
       - name: Publish to VS Code Marketplace
-        if: ${{ secrets.VSCE_TOKEN != '' }}
+        if: ${{ secrets.VSCE_TOKEN }}
         run: npx @vscode/vsce publish -p ${{ secrets.VSCE_TOKEN }}
         continue-on-error: true
