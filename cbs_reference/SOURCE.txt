@@ -1,0 +1,20 @@
+cbs_reference/src is a copy of RisuAI's src folder.
+
+repo:     https://github.com/kwaroran/RisuAI
+ref:      upstream/main
+commit:   f50b5942ec6aa59aa3c56049ac687ca09667fec7 (2026-10-23 00:20:53 +0900)
+updated:  2026-10-23
+previous: 6981ced5 (2025-12-13), identified by matching src/ts/cbs.ts and src/ts/parser.svelte.ts
+
+Update (run from cbs-extension; uses the ../RisuAI clone but only its git objects,
+so its checked-out branch and working tree are not touched):
+
+  git -C ../RisuAI fetch upstream
+  rm -rf cbs_reference/src && mkdir cbs_reference/src
+  git -C ../RisuAI archive upstream/main src | tar -x -C cbs_reference/src --strip-components=1
+
+Then update the commit/updated/previous lines above.
+
+See what changed in CBS since the recorded commit:
+
+  git -C ../RisuAI log --oneline <commit>..upstream/main -- src/ts/cbs.ts src/ts/parser src/etc/docs
