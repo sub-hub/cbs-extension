@@ -13,7 +13,8 @@ so its checked-out branch and working tree are not touched):
   rm -rf cbs_reference/src && mkdir cbs_reference/src
   git -C ../RisuAI archive upstream/main src | tar -x -C cbs_reference/src --strip-components=1
 
-Then update the commit/updated/previous lines above.
+Then update the commit/updated/previous lines above, and run `npm run check:cbs`
+to see which CBS src/cbsData.ts is missing.
 
 See what changed in CBS since the recorded commit:
 

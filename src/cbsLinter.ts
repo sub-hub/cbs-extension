@@ -230,6 +230,14 @@ export class CbsLinter {
                     if (blockMatch) {
                         const blockName = blockMatch[1];
                         blockStack.push({ name: blockName, range: range, line: startLine });
+                        // RisuAI only recognizes #if_pure; '#if-pure 1' runs as a plain #if and trims whitespace
+                        if (blockName === 'if-pure') {
+                            diagnostics.push(new vscode.Diagnostic(
+                                range,
+                                "RisuAI treats '{{#if-pure}}' as '{{#if}}', so whitespace is not kept. Use '{{#if_pure}}' instead.",
+                                vscode.DiagnosticSeverity.Warning
+                            ));
+                        }
                     }
                 }
                 // Check if it's a block end tag

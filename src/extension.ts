@@ -3,6 +3,7 @@ import * as path from 'path';
 import { cbsCommandsData, findCommandInfo, extractCommandIdentifierFromPrefix, countParametersInCurrentTag } from './cbsData';
 import { CbsLinter } from './cbsLinter';
 import { CbsInlayDecorator } from './cbsInlayDecorations';
+import { findBlockPairs } from './cbsBlocks';
 import { log } from './log';
 import { formatLine, calculateInitialFormattingState, FormattingState, formatDocumentWithMapping, SourceMapEntry, goToOriginalLine, goToOriginalCharacter } from './cbsFormatter';
 
@@ -64,7 +65,7 @@ class CbsDefinitionProvider implements vscode.DefinitionProvider {
         const varName = getVariableNameAtPosition(document, position, allLocations);
 
         if (!varName) {
-            return undefined;
+            return findMatchingBlockTag(document, position);
         }
 
         const definitions = allLocations
@@ -73,6 +74,24 @@ class CbsDefinitionProvider implements vscode.DefinitionProvider {
 
         return definitions;
     }
+}
+
+/**
+ * On a block's closing tag, returns its opening tag; on an opening tag, returns its closing tag.
+ * Lets Ctrl+Click (Go to Definition) jump between {{#when ...}} and {{/when}}.
+ */
+function findMatchingBlockTag(document: vscode.TextDocument, position: vscode.Position): vscode.Location | undefined {
+    const offset = document.offsetAt(position);
+    const isInside = (start: number, end: number) => offset >= start && offset < end;
+    // Inner blocks come first, so the innermost tag under the cursor wins
+    const pair = findBlockPairs(document.getText()).find(p => isInside(p.openStart, p.openEnd) || isInside(p.closeStart, p.closeEnd));
+    if (!pair) {
+        return undefined;
+    }
+    const [start, end] = isInside(pair.closeStart, pair.closeEnd)
+        ? [pair.openStart, pair.openEnd]
+        : [pair.closeStart, pair.closeEnd];
+    return new vscode.Location(document.uri, new vscode.Range(document.positionAt(start), document.positionAt(end)));
 }
 
 class CbsReferenceProvider implements vscode.ReferenceProvider {

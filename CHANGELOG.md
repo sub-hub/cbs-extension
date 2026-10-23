@@ -4,7 +4,20 @@ All notable changes to the RisuAI CBS Editor are listed here.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-23
+
+Brings the extension up to date with RisuAI as of 2026-10-22 (commit `f50b5942`).
+
+### Added
+- New CBS: `authornote` (`author_note`), `bkspc`, `erase` and `declare`, and the `rollpick` alias of `rollp`.
+- Ctrl+Click (Go to Definition) on a block's opening tag jumps to its closing tag, and back.
+- A warning on `{{#if-pure}}`: RisuAI runs it as a plain `{{#if}}`, so whitespace is not kept. Use `{{#if_pure}}`.
+
 ### Changed
+- Command names are matched the way RisuAI matches them, ignoring case, spaces, `_` and `-`. Valid tags such as `{{get_var::a}}` or `{{previous-char-chat}}` are no longer reported as unknown commands.
+- The if_pure snippet now inserts `{{#if_pure}}` instead of `{{#if-pure}}`.
+- The each snippet now inserts `{{#each array as item}}`.
+- The when operator snippet also offers `toggle`, `vis`, `visnot`, `tis` and `tisnot`.
 - Debug messages go to the "CBS Editor" channel in the Output panel instead of the extension host log. They are hidden unless the channel's log level is set to Debug.
 - The package no longer includes development files.
 

@@ -40,6 +40,7 @@ export const cbsCommandsData: CbsCommandInfo[] = [
   { name: 'previous_char_chat', aliases: ['lastcharmessage', 'previouscharchat'], description: "Replaced with the last message of the current character.", signatureLabel: 'previous_char_chat' },
   { name: 'previous_user_chat', aliases: ['lastusermessage', 'previoususerchat'], description: "Replaced with the last message of the user.", signatureLabel: 'previous_user_chat' },
   { name: 'previous_chat_log', description: 'Replaced with the chat message with the index A.', signatureLabel: 'previous_chat_log::A', parameters: [{ label: 'A (index)' }] },
+  { name: 'authornote', aliases: ['author_note'], description: "Replaced with the author's note of the current chat. If the chat has none, the default author's note from the prompt template is used.", signatureLabel: 'authornote' },
   { name: 'first_msg_index', aliases: ['firstmessageindex', 'firstmsgindex'], description: 'Replaced with the index of the first message.', signatureLabel: 'first_msg_index' },
   { name: 'screen_width', aliases: ['screenwidth'], description: 'Replaced with the width of the screen in pixels.', signatureLabel: 'screen_width' },
   { name: 'screen_height', aliases: ['screenheight'], description: 'Replaced with the height of the screen in pixels.', signatureLabel: 'screen_height' },
@@ -187,9 +188,12 @@ export const cbsCommandsData: CbsCommandInfo[] = [
   { name: 'pick', description: 'Consistent random value from parameters for the same message. Can use :: or : with , as separator.', signatureLabel: 'pick:A,[B...]', parameters: [{ label: 'A, B... (values)' }], isPrefixCommand: true }, // Note: isPrefixCommand here refers to the colon format.
   { name: 'roll', description: 'Random number between 1 and 6 (default dice roll).', signatureLabel: 'roll' },
   { name: 'roll', description: 'Random number between 1 and A (e.g., roll:6 or roll:d20).', signatureLabel: 'roll:A', parameters: [{ label: 'A (max value or dX)' }], isPrefixCommand: true },
-  { name: 'rollp', description: 'Consistent random number between 1 and 6 for the same message (default dice roll).', signatureLabel: 'rollp' },
-  { name: 'rollp', description: 'Consistent random number between 1 and A for the same message (e.g., rollp:6 or rollp:d20).', signatureLabel: 'rollp:A', parameters: [{ label: 'A (max value or dX)' }], isPrefixCommand: true },
+  { name: 'rollp', aliases: ['rollpick'], description: 'Consistent random number between 1 and 6 for the same message (default dice roll).', signatureLabel: 'rollp' },
+  { name: 'rollp', aliases: ['rollpick'], description: 'Consistent random number between 1 and A for the same message (e.g., rollp:6 or rollp:d20).', signatureLabel: 'rollp:A', parameters: [{ label: 'A (max value or dX)' }], isPrefixCommand: true },
   { name: 'spread', description: 'Joins array A with :: for use in other syntaxes.', signatureLabel: 'spread::A', parameters: [{ label: 'A (array)' }] },
+  { name: 'bkspc', description: 'Removes the last word from the output before this tag (e.g., "hello world {{bkspc}} user" becomes "hello user").', signatureLabel: 'bkspc' },
+  { name: 'erase', description: "Removes the last sentence from the output before this tag (e.g., \"hello world. what's in {{erase}} what's up\" becomes \"hello world. what's up\").", signatureLabel: 'erase' },
+  { name: 'declare', description: "Declares A, which can change the parser's behavior.", signatureLabel: 'declare::A', parameters: [{ label: 'A (declaration name)' }] },
   { name: 'replace', description: 'Replaced with A with all B replaced by C.', signatureLabel: 'replace::A::B::C', parameters: [{ label: 'A (text)' }, { label: 'B (search)' }, { label: 'C (replace)' }] },
   { name: 'range', description: 'Creates an array of numbers from array A. A can be [count], [start, end], or [start, end, step].', signatureLabel: 'range::A', parameters: [{ label: 'A (array: [count] or [start, end, step?])' }] },
   { name: 'length', description: 'Replaced with the length of string A.', signatureLabel: 'length::A', parameters: [{ label: 'A (string)' }] },
@@ -247,18 +251,34 @@ export const cbsCommandsData: CbsCommandInfo[] = [
 //   { name: ':else', description: 'Else statement for CBS. Must be used inside {{#when}}. For multiline blocks, :else must be on its own line.', signatureLabel: ':else', isBlock: true },
 ];
 
+// RisuAI's matcher lowercases a name and drops whitespace, '_' and '-' before looking it up,
+// so {{get_var::a}}, {{Get-Var::a}} and {{getvar::a}} are the same command (see matcher in parser.svelte.ts).
+// Only names starting with a letter or digit are normalized; #, /, ?, // and __ names must match exactly.
+function isSameCommandName(name: string, commandIdentifier: string): boolean {
+    const lowerName = name.toLowerCase();
+    const lowerIdentifier = commandIdentifier.toLowerCase();
+    if (lowerName === lowerIdentifier) {
+        return true;
+    }
+    if (!/^[a-z0-9]/.test(lowerIdentifier)) {
+        return false;
+    }
+    const normalizedIdentifier = lowerIdentifier.replace(/[\s_-]/g, '');
+    return normalizedIdentifier !== '' && lowerName.replace(/[\s_-]/g, '') === normalizedIdentifier;
+}
+
 // Helper function to find command info by name (including prefix like #) or alias
 export function findCommandInfo(commandIdentifier: string): CbsCommandInfo | undefined {
     const lowerCommandIdentifier = commandIdentifier.toLowerCase();
     return cbsCommandsData.find(cmd => {
         // Check primary name (case-insensitive)
-        if (cmd.name.toLowerCase() === lowerCommandIdentifier) {
+        if (isSameCommandName(cmd.name, commandIdentifier)) {
             return true;
         }
         // Check aliases (case-insensitive) only if the identifier doesn't start with #, ?, /
         // and the command itself is not a prefix command (to avoid matching 'random' for 'random:A')
         if (!/^[#?\/]/.test(lowerCommandIdentifier) && !cmd.isPrefixCommand && cmd.aliases) {
-           return cmd.aliases.some(alias => alias.toLowerCase() === lowerCommandIdentifier);
+           return cmd.aliases.some(alias => isSameCommandName(alias, commandIdentifier));
         }
         // For prefix commands, check if the identifier starts with the command name + ':'
         if (cmd.isPrefixCommand && lowerCommandIdentifier.startsWith(cmd.name.toLowerCase() + ':')) {
@@ -271,17 +291,16 @@ export function findCommandInfo(commandIdentifier: string): CbsCommandInfo | und
 // Helper function to find ALL command info entries by name or alias
 // This is useful when a command name can have multiple signatures (e.g. 'random' simple vs 'random:A,B')
 export function findAllCommandInfo(commandIdentifier: string): CbsCommandInfo[] {
-    const lowerCommandIdentifier = commandIdentifier.toLowerCase();
     return cbsCommandsData.filter(cmd => {
-        if (cmd.name.toLowerCase() === lowerCommandIdentifier) {
+        if (isSameCommandName(cmd.name, commandIdentifier)) {
             return true;
         }
-        if (!cmd.isPrefixCommand && cmd.aliases?.some(alias => alias.toLowerCase() === lowerCommandIdentifier)) {
+        if (!cmd.isPrefixCommand && cmd.aliases?.some(alias => isSameCommandName(alias, commandIdentifier))) {
            return true;
         }
         // This part might be tricky if a prefix command name without the colon matches a non-prefix command.
         // For now, keeping it simple. If 'random' is searched, it should find both 'random' and 'random:A,B'.
-        if (cmd.isPrefixCommand && lowerCommandIdentifier === cmd.name.toLowerCase()){
+        if (cmd.isPrefixCommand && isSameCommandName(cmd.name, commandIdentifier)){
             return true;
         }
         return false;

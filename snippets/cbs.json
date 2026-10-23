@@ -22,7 +22,7 @@
   "CBS: when block with operators": {
     "prefix": ["when-operator", "cbswhenop"],
     "body": [
-      "{{#when::${1|keep,legacy,not,and,or,var,is,isnot,>,<,>=,<=|}::${2:condition}}}",
+      "{{#when::${1|keep,legacy,not,and,or,var,toggle,is,isnot,vis,visnot,tis,tisnot,>,<,>=,<=|}::${2:condition}}}",
       "\t$0",
       "{{/when}}"
     ],
@@ -38,18 +38,18 @@
     "description": "⚠️ DEPRECATED: Use {{#when}} instead. Inserts an if block."
   },
   "CBS: if-pure block (deprecated)": {
-    "prefix": ["cbsifp", "{{#if-pure", "if-pure", "[if-pure"],
+    "prefix": ["cbsifp", "{{#if_pure", "if_pure", "[if_pure", "{{#if-pure", "if-pure", "[if-pure"],
     "body": [
-      "{{#if-pure ${1:condition}}}",
+      "{{#if_pure ${1:condition}}}",
       "$0",
-      "{{/if-pure}}"
+      "{{/if_pure}}"
     ],
-    "description": "⚠️ DEPRECATED: Use {{#when::keep::condition}} instead. Inserts an if-pure block (preserves whitespace)."
+    "description": "⚠️ DEPRECATED: Use {{#when::keep::condition}} instead. Inserts an if_pure block (preserves whitespace)."
   },
   "CBS: each block": {
     "prefix": ["cbseach", "{{#each", "each", "[each"],
     "body": [
-      "{{#each ${1:array} ${2:item}}}",
+      "{{#each ${1:array} as ${2:item}}}",
       "\t{{slot::$2}}$0",
       "{{/each}}"
     ],

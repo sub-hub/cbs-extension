@@ -2,7 +2,7 @@
   "name": "cbs-editor",
   "displayName": "RisuAI CBS Editor",
   "description": "Provides syntax highlighting and language support for Curly Braced Syntax (CBS) In RisuAI",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "publisher": "mollu",
   "license": "GPL-3.0-only",
   "homepage": "https://github.com/sub-hub/cbs-extension",
@@ -207,7 +207,8 @@
     "lint": "eslint src --ext ts",
     "pretest": "tsc -p tsconfig.test.json",
     "test": "node --test \"out/test/**/*.test.js\"",
-    "test:update": "npm run pretest && node out/test/updateSnapshots.js"
+    "test:update": "npm run pretest && node out/test/updateSnapshots.js",
+    "check:cbs": "npm run pretest && node out/test/checkCbsDrift.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",
