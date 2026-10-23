@@ -4,6 +4,17 @@ All notable changes to the RisuAI CBS Editor are listed here.
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-23
+
+### Fixed
+- Installing the extension no longer changes inlay hint colors in other languages. 1.5.0 overrode VS Code's built-in `editorInlayHint.*` colors, which apply to every language.
+
+### Changed
+- CBS hints are now drawn by the extension itself so they keep their colors without touching other languages. The colors can be changed with `cbs.inlayHint.parameterForeground`, `cbs.inlayHint.parameterBackground`, `cbs.inlayHint.typeForeground` and `cbs.inlayHint.typeBackground` in `workbench.colorCustomizations`.
+- Long CBS hints are no longer cut off with `…`.
+- Hint tooltips now show when hovering the text the hint belongs to (for example the `{{/if}}` tag or the parameter), not the hint itself.
+- CBS hints follow `editor.inlayHints.enabled`. The "while pressed" modes (`onUnlessPressed`, `offUnlessPressed`) behave as always on or always off.
+
 ## [1.5.0] - 2026-01-14
 
 ### Added

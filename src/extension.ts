@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { cbsCommandsData, findCommandInfo, extractCommandIdentifierFromPrefix, countParametersInCurrentTag } from './cbsData';
 import { CbsLinter } from './cbsLinter';
-import { CbsInlayHintsProvider } from './cbsInlayHints';
+import { CbsInlayDecorator } from './cbsInlayDecorations';
 import { formatLine, calculateInitialFormattingState, FormattingState, formatDocumentWithMapping, SourceMapEntry, goToOriginalLine, goToOriginalCharacter } from './cbsFormatter';
 
 // NEW: Define a decoration type for highlighting
@@ -174,11 +174,8 @@ export function activate(context: vscode.ExtensionContext) {
   cbsLinter = new CbsLinter();
   cbsLinter.activate(context);
 
-  // --- Register Inlay Hints Provider ---
-  const inlayHintsProvider = new CbsInlayHintsProvider();
-  context.subscriptions.push(
-    vscode.languages.registerInlayHintsProvider({ language: 'cbs' }, inlayHintsProvider)
-  );
+  // --- Inlay Hints (drawn as decorations so CBS hints get their own colors) ---
+  context.subscriptions.push(new CbsInlayDecorator());
 
   // --- Register Content Provider ---
   const previewScheme = 'cbs-preview';

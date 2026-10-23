@@ -2,6 +2,14 @@ import * as vscode from 'vscode';
 import { findCommandInfo, findAllCommandInfo, CbsCommandInfo } from './cbsData';
 
 /**
+ * An inlay hint that also knows the source text it describes.
+ * The decorator uses `target` as the hover area, since a zero-width decoration cannot be hovered.
+ */
+export class CbsInlayHint extends vscode.InlayHint {
+    target?: vscode.Range;
+}
+
+/**
  * Provides Inlay Hints for CBS language files.
  * Shows parameter names, block closing hints, math symbols, and data previews.
  */
@@ -81,7 +89,7 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
                         }
                     } else if (firstChar === 47) { // '/' - Block end tag
                         if (showBlockEnd) {
-                            const blockHints = this.processBlockEnd(tagContent, document, absoluteTagEnd, blockStack);
+                            const blockHints = this.processBlockEnd(tagContent, document, absoluteTagStart, absoluteTagEnd, blockStack);
                             hints.push(...blockHints);
                         }
                     } else if (!tagContent.startsWith('?') && tagContent !== ':else') {
@@ -149,6 +157,7 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
     private processBlockEnd(
         tagContent: string,
         document: vscode.TextDocument,
+        absoluteTagStart: number,
         absoluteTagEnd: number,
         blockStack: Array<{ name: string; condition: string; position: vscode.Position }>
     ): vscode.InlayHint[] {
@@ -157,12 +166,13 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
         if (!openBlock) return [];
         
         // Create hint showing which block is being closed
-        const hint = new vscode.InlayHint(
+        const hint = new CbsInlayHint(
             document.positionAt(absoluteTagEnd),
             openBlock.condition ? ` ${openBlock.condition}` : '',
             vscode.InlayHintKind.Type
         );
         hint.paddingLeft = true;
+        hint.target = new vscode.Range(document.positionAt(absoluteTagStart), hint.position);
         
         // Build tooltip efficiently
         hint.tooltip = openBlock.condition
@@ -256,7 +266,10 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
                 document,
                 absoluteTagEnd
             );
-            if (previewHint) hints.push(previewHint);
+            if (previewHint) {
+                previewHint.target = new vscode.Range(document.positionAt(absoluteTagStart), previewHint.position);
+                hints.push(previewHint);
+            }
         }
         
         return hints;
@@ -303,12 +316,13 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
                 labelText = labelText.replace(/^[A-Z]\s+/, '');
             }
             
-            const hint = new vscode.InlayHint(
+            const hint = new CbsInlayHint(
                 hintPosition,
                 `⟨${labelText}⟩ `,
                 vscode.InlayHintKind.Parameter
             );
             hint.paddingRight = true;
+            hint.target = new vscode.Range(hintPosition, document.positionAt(hintOffset + params[paramIndex].length));
             
             if (paramInfo.documentation) {
                 hint.tooltip = typeof paramInfo.documentation === 'string' 
@@ -374,7 +388,7 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
         params: string[],
         document: vscode.TextDocument,
         absolutePosition: number
-    ): vscode.InlayHint | null {
+    ): CbsInlayHint | null {
         // Unicode decode: {{u::1F600}} -> 😀
         if ((commandName === 'u' || commandName === 'ue' || commandName === 'unicodedecodefromhex') && params.length > 0) {
             try {
@@ -382,7 +396,7 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
                 const codePoint = parseInt(hexValue, 16);
                 if (!isNaN(codePoint) && codePoint >= 0 && codePoint <= 0x10FFFF) {
                     const char = String.fromCodePoint(codePoint);
-                    const hint = new vscode.InlayHint(
+                    const hint = new CbsInlayHint(
                         document.positionAt(absolutePosition - 2),
                         ` ⟪${char}⟫`,
                         vscode.InlayHintKind.Type
@@ -402,7 +416,7 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
                 const hexValue = params[0].trim();
                 const decimal = parseInt(hexValue, 16);
                 if (!isNaN(decimal)) {
-                    const hint = new vscode.InlayHint(
+                    const hint = new CbsInlayHint(
                         document.positionAt(absolutePosition - 2),
                         ` ⟪${decimal}⟫`,
                         vscode.InlayHintKind.Type
@@ -423,7 +437,7 @@ export class CbsInlayHintsProvider implements vscode.InlayHintsProvider {
                 const decimal = parseInt(decimalStr, 10);
                 if (!isNaN(decimal)) {
                     const hexValue = decimal.toString(16).toUpperCase();
-                    const hint = new vscode.InlayHint(
+                    const hint = new CbsInlayHint(
                         document.positionAt(absolutePosition - 2),
                         ` ⟪${hexValue}⟫`,
                         vscode.InlayHintKind.Type
