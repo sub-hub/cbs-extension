@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { log } from './log';
 
 export interface FormattingState {
     indentLevel: number;
@@ -439,7 +440,7 @@ export function goToOriginalCharacter(args: GoToOriginalCharArgs): void {
     // Handle cases where essential text is missing (e.g., empty line click)
     if (!previewSelectedText || previewSelectedText.trim().length === 0) {
         // If text is empty, fall back to line navigation using the mapping selection start
-        console.log("goToOriginalCharacter: No selected text provided, falling back to line navigation.");
+        log.debug("goToOriginalCharacter: No selected text provided, falling back to line navigation.");
         goToOriginalLine(
             sourceMap,
             previewSelectionForMapping.start, // Use the start of the selection used for mapping
@@ -452,7 +453,7 @@ export function goToOriginalCharacter(args: GoToOriginalCharArgs): void {
     }
      // Also check previewLineText, although it should generally exist if previewSelectedText does
      if (!previewLineText || previewLineText.trim().length === 0) {
-        console.warn("goToOriginalCharacter: previewLineText is missing or empty, falling back to simpler search.");
+        log.warn("goToOriginalCharacter: previewLineText is missing or empty, falling back to simpler search.");
         // Fallback logic might be needed here, perhaps just searching for previewSelectedText directly
         // For now, let's proceed but the more robust search might fail.
     }
@@ -502,10 +503,10 @@ export function goToOriginalCharacter(args: GoToOriginalCharArgs): void {
                 // Adjust index to be relative to the start of the original line
                 foundSelectionIndex += foundLineIndex;
             }
-             console.log(`Found line text "${searchLineText}" at index ${foundLineIndex}. Searching for "${searchText}" within it.`);
+             log.debug(`Found line text "${searchLineText}" at index ${foundLineIndex}. Searching for "${searchText}" within it.`);
         } else {
             // If the full line wasn't found (or wasn't searched for), search the entire original line for the selected text
-            console.log(`Line text "${searchLineText}" not found or not searched. Searching entire original line for "${searchText}".`);
+            log.debug(`Line text "${searchLineText}" not found or not searched. Searching entire original line for "${searchText}".`);
             foundSelectionIndex = originalLineText.indexOf(searchText);
             searchStartIndexForSelection = 0; // Search started from beginning of original line
         }
@@ -514,14 +515,14 @@ export function goToOriginalCharacter(args: GoToOriginalCharArgs): void {
 
         if (foundSelectionIndex !== -1) {
             // Found the selected text!
-            console.log(`Found selected text "${searchText}" at index ${foundSelectionIndex} in original line.`);
+            log.debug(`Found selected text "${searchText}" at index ${foundSelectionIndex} in original line.`);
             let originalSelection: vscode.Selection;
             const originalStartPosition = new vscode.Position(originalTargetLineNumber, foundSelectionIndex);
             const originalEndPosition = new vscode.Position(originalTargetLineNumber, foundSelectionIndex + searchText.length);
 
             if (originalCursorPosition) {
                 // CLICK CASE: Map character offset relative to the start of the *found selection*
-                console.log("Click detected. Calculating precise cursor position.");
+                log.debug("Click detected. Calculating precise cursor position.");
                 // Find start character of the *selected text* within the *preview line*
                 const selectedTextStartIndexInPreview = previewLineText?.indexOf(searchText) ?? -1;
 
@@ -533,16 +534,16 @@ export function goToOriginalCharacter(args: GoToOriginalCharArgs): void {
                     // Clamp the offset to be within the bounds of the found text length in the original
                     const safeOffset = Math.max(0, Math.min(clickOffsetRelativeToFoundText, searchText.length));
                     targetCharIndex = foundSelectionIndex + safeOffset;
-                    console.log(`Preview click offset relative to found text: ${clickOffsetRelativeToFoundText}, Safe offset: ${safeOffset}, Target char index: ${targetCharIndex}`);
+                    log.debug(`Preview click offset relative to found text: ${clickOffsetRelativeToFoundText}, Safe offset: ${safeOffset}, Target char index: ${targetCharIndex}`);
                 } else {
-                    console.warn("Could not find selected text start in preview line or previewLineText missing; placing cursor at start of found text in original.");
+                    log.warn("Could not find selected text start in preview line or previewLineText missing; placing cursor at start of found text in original.");
                 }
 
                 const targetPosition = new vscode.Position(originalTargetLineNumber, targetCharIndex);
                 originalSelection = new vscode.Selection(targetPosition, targetPosition); // Zero-width selection
             } else {
                 // DRAG CASE: Select the entire found range of the selected text.
-                 console.log("Drag detected. Selecting the entire found range.");
+                 log.debug("Drag detected. Selecting the entire found range.");
                 originalSelection = new vscode.Selection(originalStartPosition, originalEndPosition);
             }
 
@@ -559,13 +560,13 @@ export function goToOriginalCharacter(args: GoToOriginalCharArgs): void {
                 editor.revealRange(originalSelection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 
                 if (targetEditor && decorationType && editor.document.uri.toString() === targetEditor.document.uri.toString()) {
-                    console.log(`Applying decoration to range: [${originalHighlightRange.start.line}, ${originalHighlightRange.start.character}] to [${originalHighlightRange.end.line}, ${originalHighlightRange.end.character}]`);
+                    log.debug(`Applying decoration to range: [${originalHighlightRange.start.line}, ${originalHighlightRange.start.character}] to [${originalHighlightRange.end.line}, ${originalHighlightRange.end.character}]`);
                     targetEditor.setDecorations(decorationType, [originalHighlightRange]);
                     setTimeout(() => {
                         targetEditor.setDecorations(decorationType, []);
                     }, 3000);
                 } else {
-                     console.log("Skipping decoration: Target editor or decoration type not provided or editor mismatch.");
+                     log.debug("Skipping decoration: Target editor or decoration type not provided or editor mismatch.");
                 }
             });
 
@@ -573,7 +574,7 @@ export function goToOriginalCharacter(args: GoToOriginalCharArgs): void {
             // If the selected text was not found even after trying the line search
             vscode.window.showWarningMessage(`Could not find the exact text "${searchText}" in the original line ${originalTargetLineNumber + 1}. Formatting might have altered it.`);
             // Fallback to line navigation
-            console.log("Selected text not found, falling back to line navigation.");
+            log.debug("Selected text not found, falling back to line navigation.");
             goToOriginalLine(
                 sourceMap,
                 previewSelectionForMapping.start, // Use the start of the selection used for mapping

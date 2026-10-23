@@ -3,6 +3,7 @@ import * as path from 'path';
 import { cbsCommandsData, findCommandInfo, extractCommandIdentifierFromPrefix, countParametersInCurrentTag } from './cbsData';
 import { CbsLinter } from './cbsLinter';
 import { CbsInlayDecorator } from './cbsInlayDecorations';
+import { log } from './log';
 import { formatLine, calculateInitialFormattingState, FormattingState, formatDocumentWithMapping, SourceMapEntry, goToOriginalLine, goToOriginalCharacter } from './cbsFormatter';
 
 // NEW: Define a decoration type for highlighting
@@ -146,13 +147,13 @@ class CbsPreviewContentProvider implements vscode.TextDocumentContentProvider {
     // Provide content - VS Code calls this when opening the virtual doc or when notified of change
     provideTextDocumentContent(uri: vscode.Uri): string | Thenable<string> {
         const context = previewContextMap.get(uri.toString());
-        console.log(`Preview Provider: Providing content for ${uri.toString()}. Found context: ${!!context}`);
+        log.debug(`Preview Provider: Providing content for ${uri.toString()}. Found context: ${!!context}`);
         return context?.formattedContent ?? `// Error: Could not find preview content for ${uri.toString()}`;
     }
 
     // Method to signal that the content for a specific URI has changed
     update(uri: vscode.Uri) {
-        console.log(`Preview Provider: Firing change event for ${uri.toString()}`);
+        log.debug(`Preview Provider: Firing change event for ${uri.toString()}`);
         this._onDidChangeEmitter.fire(uri);
     }
 
@@ -170,6 +171,8 @@ interface PreviewContext {
 
 
 export function activate(context: vscode.ExtensionContext) {
+
+  context.subscriptions.push(log);
 
   cbsLinter = new CbsLinter();
   cbsLinter.activate(context);
@@ -224,7 +227,7 @@ export function activate(context: vscode.ExtensionContext) {
             originalToPreviewMap.set(originalUriString, new Set());
         }
         originalToPreviewMap.get(originalUriString)?.add(previewUri.toString());
-        console.log(`Show Preview: Added mapping ${originalUriString} -> ${previewUri.toString()}`);
+        log.debug(`Show Preview: Added mapping ${originalUriString} -> ${previewUri.toString()}`);
 
         // Open the virtual document
         const previewDoc = await vscode.workspace.openTextDocument(previewUri); // URI is now correctly passed
@@ -238,7 +241,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.executeCommand('setContext', 'cbs.isPreviewActive', true);
 
     } catch (error) {
-        console.error("Error generating CBS preview:", error);
+        log.error("Error generating CBS preview:", error);
         vscode.window.showErrorMessage(`Failed to generate CBS formatted preview: ${error}`);
     }
   });
@@ -247,24 +250,24 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --- Command: Go To Original Location (Sentence/Selection) ---
   const goToOriginalCommand = vscode.commands.registerCommand('cbs.goToOriginalLocation', async () => {
-    console.log('GoToOriginal (Sentence/Selection): Command triggered.');
+    log.debug('GoToOriginal (Sentence/Selection): Command triggered.');
     const previewEditor = vscode.window.activeTextEditor;
     if (!previewEditor || previewEditor.document.uri.scheme !== previewScheme) {
         // Should not happen if 'when' clause is set correctly in package.json
-    console.log('GoToOriginal (Sentence/Selection): Command triggered on non-preview editor or no active editor.');
+    log.debug('GoToOriginal (Sentence/Selection): Command triggered on non-preview editor or no active editor.');
         return;
     }
-    console.log('GoToOriginal (Sentence/Selection): Active editor is a preview editor. URI:', previewEditor.document.uri.toString());
+    log.debug('GoToOriginal (Sentence/Selection): Active editor is a preview editor. URI:', previewEditor.document.uri.toString());
 
     const previewUriString = previewEditor.document.uri.toString();
     const contextData = previewContextMap.get(previewUriString);
 
     if (!contextData) {
-        console.error('GoToOriginal (Sentence/Selection): Could not find context data for URI:', previewUriString);
+        log.error('GoToOriginal (Sentence/Selection): Could not find context data for URI:', previewUriString);
         vscode.window.showErrorMessage('Could not find original source context for this preview.');
         return;
     }
-    console.log('GoToOriginal (Sentence/Selection): Found context data. Original URI:', contextData.originalUri.toString());
+    log.debug('GoToOriginal (Sentence/Selection): Found context data. Original URI:', contextData.originalUri.toString());
 
     const previewSelection = previewEditor.selection; // The actual user selection
     const previewDocument = previewEditor.document;
@@ -289,10 +292,10 @@ export function activate(context: vscode.ExtensionContext) {
             const endPos = new vscode.Position(currentLineNumber, endChar);
             selectionToSearch = new vscode.Selection(startPos, endPos); // Use this derived selection for mapping/search
             previewSelectedText = trimmedLineText; // The text to search for is the trimmed line content
-            console.log(`GoToOriginal (Sentence/Selection): No selection. Searching for line content: "${previewSelectedText}"`);
+            log.debug(`GoToOriginal (Sentence/Selection): No selection. Searching for line content: "${previewSelectedText}"`);
         } else {
             // Line is empty or only whitespace. Fallback to line navigation.
-            console.log(`GoToOriginal (Sentence/Selection): No selection and line is empty/whitespace. Falling back to line navigation.`);
+            log.debug(`GoToOriginal (Sentence/Selection): No selection and line is empty/whitespace. Falling back to line navigation.`);
             // Directly call goToOriginalLine here or let goToOriginalCharacter handle the empty previewSelectedText case.
             // Let's modify goToOriginalCharacter to handle it.
             selectionToSearch = previewSelection; // Use original empty selection for mapping
@@ -304,12 +307,12 @@ export function activate(context: vscode.ExtensionContext) {
         previewSelectedText = previewDocument.getText(previewSelection); // Get the selected text
         // Get the text of the line where the selection starts
         previewLineText = previewDocument.lineAt(previewSelection.start.line).text;
-        console.log(`GoToOriginal (Sentence/Selection): User selection. Line text: "${previewLineText}", Selected text: "${previewSelectedText}"`);
+        log.debug(`GoToOriginal (Sentence/Selection): User selection. Line text: "${previewLineText}", Selected text: "${previewSelectedText}"`);
     }
 
     // Ensure we have text to search if we derived it from an empty selection line
     if (!previewSelectedText && wasInitiallyEmpty) {
-         console.log(`GoToOriginal (Sentence/Selection): No searchable text derived from empty line. Aborting character search.`);
+         log.debug(`GoToOriginal (Sentence/Selection): No searchable text derived from empty line. Aborting character search.`);
          // Optionally call goToOriginalLine as a fallback here if desired
          // goToOriginalLine(...)
          return; // Stop processing for character search
@@ -317,7 +320,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 
     // Call goToOriginalCharacter with the necessary info
-    console.log(`GoToOriginal (Sentence/Selection): Calling goToOriginalCharacter. Mapping starts at line ${selectionToSearch.start.line}.`);
+    log.debug(`GoToOriginal (Sentence/Selection): Calling goToOriginalCharacter. Mapping starts at line ${selectionToSearch.start.line}.`);
 
      // Find the target editor window for the original document
     const targetEditor = vscode.window.visibleTextEditors.find(editor =>
@@ -338,10 +341,10 @@ export function activate(context: vscode.ExtensionContext) {
     };
 
     if (targetEditor) {
-        console.log('GoToOriginal (Sentence/Selection): Original document editor is visible.');
+        log.debug('GoToOriginal (Sentence/Selection): Original document editor is visible.');
         goToOriginalCharacter(args);
     } else {
-        console.log('GoToOriginal (Sentence/Selection): Original document editor not visible. Opening and selecting.');
+        log.debug('GoToOriginal (Sentence/Selection): Original document editor not visible. Opening and selecting.');
         goToOriginalCharacter(args); // goToOriginalCharacter handles opening
     }
   });
@@ -350,27 +353,27 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --- Command: Go To Original Location (Line) ---
   const goToOriginalLineCommand = vscode.commands.registerCommand('cbs.goToOriginalLocationLine', async () => {
-    console.log('GoToOriginal (Line): Command triggered.');
+    log.debug('GoToOriginal (Line): Command triggered.');
     const previewEditor = vscode.window.activeTextEditor;
     if (!previewEditor || previewEditor.document.uri.scheme !== previewScheme) {
-        console.log('GoToOriginal (Line): Command triggered on non-preview editor or no active editor.');
+        log.debug('GoToOriginal (Line): Command triggered on non-preview editor or no active editor.');
         return;
     }
-    console.log('GoToOriginal (Line): Active editor is a preview editor. URI:', previewEditor.document.uri.toString());
+    log.debug('GoToOriginal (Line): Active editor is a preview editor. URI:', previewEditor.document.uri.toString());
 
     const previewUriString = previewEditor.document.uri.toString();
     const contextData = previewContextMap.get(previewUriString);
 
     if (!contextData) {
-        console.error('GoToOriginal (Line): Could not find context data for URI:', previewUriString);
+        log.error('GoToOriginal (Line): Could not find context data for URI:', previewUriString);
         vscode.window.showErrorMessage('Could not find original source context for this preview.');
         return;
     }
-    console.log('GoToOriginal (Line): Found context data. Original URI:', contextData.originalUri.toString());
+    log.debug('GoToOriginal (Line): Found context data. Original URI:', contextData.originalUri.toString());
 
     const previewPosition = previewEditor.selection.active; // Always use the active cursor position
 
-    console.log(`GoToOriginal (Line): Calling goToOriginalLine for position: Line ${previewPosition.line}, Char ${previewPosition.character}`);
+    log.debug(`GoToOriginal (Line): Calling goToOriginalLine for position: Line ${previewPosition.line}, Char ${previewPosition.character}`);
 
     // Find the target editor window for the original document
     const targetEditor = vscode.window.visibleTextEditors.find(editor =>
@@ -379,7 +382,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     if (targetEditor) {
         // Original document is visible, pass the editor and decoration
-        console.log('GoToOriginal (Line): Original document editor is visible. Passing editor and decoration.');
+        log.debug('GoToOriginal (Line): Original document editor is visible. Passing editor and decoration.');
         goToOriginalLine(
             contextData.sourceMap,
             previewPosition,
@@ -390,7 +393,7 @@ export function activate(context: vscode.ExtensionContext) {
         );
     } else {
         // Original document not visible, just navigate
-         console.log('GoToOriginal (Line): Original document editor not visible. Opening and selecting.');
+         log.debug('GoToOriginal (Line): Original document editor not visible. Opening and selecting.');
          goToOriginalLine(
             contextData.sourceMap,
             previewPosition,
@@ -434,7 +437,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
     }
 
-    console.log(`Doc Change: Detected change in ${originalUriString}, which has previews.`);
+    log.debug(`Doc Change: Detected change in ${originalUriString}, which has previews.`);
 
     // Clear existing timer if there is one
     if (updatePreviewDebounceTimer) {
@@ -443,7 +446,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Set a new timer
     updatePreviewDebounceTimer = setTimeout(() => {
-        console.log(`Doc Change Debounced: Updating preview for ${originalUriString}`);
+        log.debug(`Doc Change Debounced: Updating preview for ${originalUriString}`);
         try {
             const editor = vscode.window.visibleTextEditors.find(e => e.document.uri.toString() === originalUriString);
             const options: vscode.FormattingOptions = {
@@ -465,17 +468,17 @@ export function activate(context: vscode.ExtensionContext) {
                         sourceMap: sourceMap,
                         formattedContent: formattedText
                     });
-                    console.log(`Doc Change Debounced: Updated context for ${previewUriString}`);
+                    log.debug(`Doc Change Debounced: Updated context for ${previewUriString}`);
 
                     // Notify the content provider to refresh this specific preview
                     previewProvider.update(previewUri);
                 } else {
-                     console.warn(`Doc Change Debounced: Could not find context for preview URI ${previewUriString} during update.`);
+                     log.warn(`Doc Change Debounced: Could not find context for preview URI ${previewUriString} during update.`);
                 }
             });
 
         } catch (error) {
-            console.error("Error updating CBS preview:", error);
+            log.error("Error updating CBS preview:", error);
             // Optionally show a subtle error to the user, but avoid being too noisy
             // vscode.window.showWarningMessage(`Failed to update CBS preview: ${error}`);
         }
@@ -489,18 +492,18 @@ export function activate(context: vscode.ExtensionContext) {
   const closeDocumentListener = vscode.workspace.onDidCloseTextDocument(document => {
     if (document.uri.scheme === previewScheme) {
         const closedPreviewUriString = document.uri.toString();
-        console.log(`Close Doc: Preview closed: ${closedPreviewUriString}`);
+        log.debug(`Close Doc: Preview closed: ${closedPreviewUriString}`);
         previewContextMap.delete(closedPreviewUriString);
 
         // Remove the closed preview from the originalToPreviewMap
         originalToPreviewMap.forEach((previewSet, originalUri) => {
             if (previewSet.has(closedPreviewUriString)) {
                 previewSet.delete(closedPreviewUriString);
-                console.log(`Close Doc: Removed ${closedPreviewUriString} from mapping for ${originalUri}`);
+                log.debug(`Close Doc: Removed ${closedPreviewUriString} from mapping for ${originalUri}`);
                 // If no more previews exist for this original, remove the entry entirely
                 if (previewSet.size === 0) {
                     originalToPreviewMap.delete(originalUri);
-                     console.log(`Close Doc: Removed empty mapping entry for ${originalUri}`);
+                     log.debug(`Close Doc: Removed empty mapping entry for ${originalUri}`);
                 }
             }
         });
@@ -872,5 +875,5 @@ export function deactivate() {
     foundRangeDecorationType.dispose();
     previewContextMap.clear();
     originalToPreviewMap.clear(); // Clear the tracking map
-    console.log("CBS Extension Deactivated: Cleaned up resources.");
+    log.debug("CBS Extension Deactivated: Cleaned up resources.");
 }

@@ -4,6 +4,10 @@ All notable changes to the RisuAI CBS Editor are listed here.
 
 ## [Unreleased]
 
+### Changed
+- Debug messages go to the "CBS Editor" channel in the Output panel instead of the extension host log. They are hidden unless the channel's log level is set to Debug.
+- The package no longer includes development files.
+
 ## [1.5.1] - 2026-10-23
 
 ### Fixed

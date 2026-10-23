@@ -3,3 +3,12 @@ format_examples
 src
 cbs_reference
 .eslintrc.json
+.github
+.vscode
+.gitignore
+tsconfig.json
+AGENTS.md
+export-repomix.bat
+repomix-output.txt
+.env*
+*.vsix
