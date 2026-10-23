@@ -1,0 +1,14 @@
+정상 동작하는 when
+{{#when::toggle::ban}}
+## the PC ({{user}}) Profile
+{{:else}}
+## Primary NPC ({{user}}) Profile
+{{/when}}
+
+이건 일부러 오류 내기
+{{:else}}
+## Primary NPC ({{user}}) Profile
+
+
+
+{{/when}}

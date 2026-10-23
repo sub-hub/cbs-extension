@@ -204,7 +204,10 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "pretest": "tsc -p tsconfig.test.json",
+    "test": "node --test \"out/test/**/*.test.js\"",
+    "test:update": "npm run pretest && node out/test/updateSnapshots.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.80.0",

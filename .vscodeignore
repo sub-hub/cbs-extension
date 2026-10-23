@@ -12,3 +12,6 @@ export-repomix.bat
 repomix-output.txt
 .env*
 *.vsix
+test
+out
+tsconfig.test.json

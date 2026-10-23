@@ -1,0 +1,40 @@
+{
+  "diagnostics": [
+    "14:1-14:10 Error Unexpected closing tag '{{/when}}'. No matching opening tag found."
+  ],
+  "inlayHints": [
+    "6:10 Type \" toggle::ban\" on 6:1-6:10"
+  ],
+  "formatted": [
+    "정상 동작하는 when",
+    "{{#when::toggle::ban}}",
+    "    ## the PC ({{user}} ) Profile",
+    "    {{:else}}",
+    "    ## Primary NPC ({{user}} ) Profile",
+    "{{/when}}",
+    "",
+    "이건 일부러 오류 내기",
+    "{{:else}}",
+    "## Primary NPC ({{user}} ) Profile",
+    "",
+    "",
+    "",
+    "{{/when}}"
+  ],
+  "sourceMap": [
+    "1 -> 1-1",
+    "2 -> 2-2",
+    "3 -> 3-3",
+    "4 -> 4-4",
+    "5 -> 5-5",
+    "6 -> 6-6",
+    "7 -> 7-7",
+    "8 -> 8-8",
+    "9 -> 9-9",
+    "10 -> 10-10",
+    "11 -> 11-11",
+    "12 -> 12-12",
+    "13 -> 13-13",
+    "14 -> 14-14"
+  ]
+}

@@ -1,0 +1,39 @@
+## Character Profile
+
+{{#when::toggle::detailed}}
+### Detailed Information
+Name: {{char}}
+Age: 25
+{{#if true}}
+Personality traits:
+- Kind
+- Brave
+{{/when}}
+
+## Another Section
+
+{{#when::toggle::show_stats}}
+Stats:
+- Strength: 10
+- Intelligence: 15
+{{/when}}
+
+## Complex Nested Example
+
+{{#when::toggle::advanced}}
+This is the outer block
+{{#when::toggle::inner1}}
+    First inner block
+    {{#if true}}
+        Deeply nested content
+        {{#each items item}}
+            Processing {{item}}
+        {{/}}
+    {{/if}}
+{{/when}}
+{{#when::toggle::inner2}}
+    Second inner block
+{{/when}}
+{{/when}}
+
+## End of document

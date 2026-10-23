@@ -1,0 +1,33 @@
+{{#if {{equal::1::1}} }}
+    Outer Level 1: Condition True {{char}}
+    {{#if {{equal::2::2}} }}
+        Inner Level 1.1: Condition True Some text here.
+        {{#each emotionList emotion}}
+            감정: {{slot::emotion}}
+        {{/each}}
+        {{#if {{equal::3::3}} }}
+            Inner Level 1.1.1: Condition True
+            {{#if {{equal::4::4}} }}
+                Inner Level 1.1.1.1: Condition True Deepest level text.
+                {{#if {{equal::5::5}} }}
+                    Even deeper.
+                {{/if}}
+                More text at 1.1.1.1
+            {{/if}}
+            Back to 1.1.1
+        {{/if}}
+        Back to 1.1
+    {{/if}}
+    {{#if {{equal::'a'::'b'}} }}
+        Inner Level 1.2: Condition False (Should not appear)
+    {{/if}}
+    More text at Outer Level 1.
+{{/if}}
+Another top-level block:
+{{#if {{equal::'x'::'x'}} }}
+    Outer Level 2: Condition True
+    {{#if {{equal::'y'::'z'}} }}
+        Inner Level 2.1: Condition False
+    {{/if}}
+{{/if}}
+End of file.

@@ -12,3 +12,8 @@ It can contain new CBS that are not merged upstream yet. Only when the user name
 Please refer to these documents carefully while coding.
 
 There is no need to run npm compile after code modification. Review the codes you modified again to see if they are correct
+
+Run npm test after changing the linter, formatter or inlay hints. The tests compare results with test\__snapshots__.
+If a snapshot changes, check that the change is intended before running npm run test:update, and mention the change to the user.
+test\upstreamCases.ts holds inputs from RisuAI's own parser tests; RisuAI accepts all of them, so new errors there are likely linter bugs.
+Files in format_examples are local only (some are real user cards); copy only synthetic examples into test\fixtures.

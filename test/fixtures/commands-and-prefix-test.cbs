@@ -1,0 +1,54 @@
+{{// ===== CBS Commands and Prefix Syntax Test =====}}
+{{// This file tests inline commands and prefix-style syntax}}
+
+{{// ----- Basic Commands -----}}
+Character name: {{char}}
+User name: {{user}}
+Random ID: {{random}}
+Roll dice: {{roll::1d20}}
+
+{{// ----- Trigger Commands -----}}
+Trigger ID: {{trigger_id}}
+Alternative: {{triggerid}}
+
+{{// ----- Asset Commands -----}}
+Display assets: {{chardisplayasset}}
+
+{{// ----- Caesar Cipher -----}}
+Caesar encrypt: {{crypt::hello world::3}}
+Crypto: {{crypto::test::5}}
+Caesar method: {{caesar::message::7}}
+Encrypt: {{encrypt::data::2}}
+Decrypt: {{decrypt::encrypted::2}}
+
+{{// ----- LaTeX/Math Rendering -----}}
+LaTeX formula: {{tex::E = mc^2}}
+KaTeX: {{katex::\int_0^\infty e^{-x} dx = 1}}
+
+{{// ----- Ruby/Furigana Text -----}}
+Ruby text: {{ruby::漢字::かんじ}}
+Furigana: {{furigana::日本語::にほんご}}
+
+{{// ----- Code Block Formatting -----}}
+Simple code: {{codeblock::console.log('Hello World');}}
+Code with lang: {{codeblock::javascript::function test() { return 42; }}}
+Python code: {{codeblock::python::def hello(): print("Hi")}}
+
+{{// ----- Prefix Syntax Commands -----}}
+{{roll: 2d6}}
+
+{{reverse: this text will be reversed}}
+
+{{//: This is a comment using // prefix}}
+
+{{? This is a conditional comment}}
+
+{{// ----- Deprecated Commands (should show warnings) -----}}
+{{// Using deprecated #pure command:}}
+{{#pure}}This should show deprecation warning{{/pure}}
+
+{{// ----- Internal Functions (DO NOT USE) -----}}
+{{// These should show warnings in linter:}}
+{{// __internal_function}}
+
+{{// ----- End of Test File -----}}

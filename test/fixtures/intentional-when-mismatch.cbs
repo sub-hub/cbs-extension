@@ -1,0 +1,27 @@
+# if와 when이 맞지 않으니까 오류를 낸다 (리스에선 오류 아님)
+{{#if true}}
+    {{#when::1}}
+        {{#if true}}
+            {{#each items item}}
+                Content
+            {{/each}}
+        {{/if}}
+    {{/when}}
+{{/when}}
+
+# 근데 when을 지우면 의도적이라고 보고 오류 안남
+{{#if true}}
+    {{#when::1}}
+        {{#if true}}
+            {{#each items item}}
+                Content
+            {{/each}}
+        {{/if}}
+
+        {{:else}}
+        dsasasd
+    {{/when}}
+{{/}}
+
+
+
