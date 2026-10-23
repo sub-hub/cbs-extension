@@ -2,3 +2,4 @@
 format_examples
 src
 cbs_reference
+.eslintrc.json

@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,12 +28,6 @@ jobs:
             npm install
           fi
 
-      - name: Build extension
-        run: npm run compile
-
-      - name: Package extension
-        run: npx @vscode/vsce package
-        
       - name: Get package info
         id: package_info
         run: |
@@ -42,6 +36,34 @@ jobs:
           echo "VERSION=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
           echo "NAME=$PACKAGE_NAME" >> $GITHUB_OUTPUT
           echo "VSIX_FILE=${PACKAGE_NAME}-${PACKAGE_VERSION}.vsix" >> $GITHUB_OUTPUT
+          echo "TAG=v${PACKAGE_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check tag matches package.json version
+        run: |
+          if [ "$GITHUB_REF_NAME" != "${{ steps.package_info.outputs.TAG }}" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version ${{ steps.package_info.outputs.VERSION }}"
+            exit 1
+          fi
+
+      # Fail before anything is released if the token is missing or no longer valid.
+      - name: Check VSCE token
+        env:
+          VSCE_TOKEN: ${{ secrets.VSCE_TOKEN }}
+        run: |
+          if [ -z "$VSCE_TOKEN" ]; then
+            echo "::error::VSCE_TOKEN secret is not set"
+            exit 1
+          fi
+          npx @vscode/vsce verify-pat "$(node -p "require('./package.json').publisher")" -p "$VSCE_TOKEN"
+
+      - name: Build extension
+        run: npm run compile
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Package extension
+        run: npx @vscode/vsce package
 
       - name: Verify VSIX file exists
         run: |
@@ -57,9 +79,9 @@ jobs:
           files: ${{ steps.package_info.outputs.VSIX_FILE }}
           body: |
             ## Changes in this Release
-            
-            See [CHANGELOG](CHANGELOG.md) for details.
-            
+
+            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for details.
+
             ### Installation
             Download the `.vsix` file and install it in VS Code:
             ```
@@ -68,9 +90,8 @@ jobs:
           fail_on_unmatched_files: true
           generate_release_notes: true
 
+      # Publish the same VSIX that was attached to the GitHub release.
       - name: Publish to VS Code Marketplace
         env:
           VSCE_TOKEN: ${{ secrets.VSCE_TOKEN }}
-        if: ${{ env.VSCE_TOKEN != '' }}
-        run: npx @vscode/vsce publish -p $VSCE_TOKEN
-        continue-on-error: true
+        run: npx @vscode/vsce publish --packagePath "${{ steps.package_info.outputs.VSIX_FILE }}" -p "$VSCE_TOKEN"
